@@ -114,6 +114,16 @@ export default async function handler(req, res) {
         res.statusCode = 200;
         return res.end(JSON.stringify({ token }));
       }
+      // whoami: look up the username a given wallet/fid identity has claimed (null if none).
+      if (req.query?.whoami || req.url.includes('whoami=')) {
+        let id = req.query?.whoami;
+        if (!id) { try { id = new URL(req.url, 'http://x').searchParams.get('whoami'); } catch { id = ''; } }
+        id = String(id || '').toLowerCase().slice(0, 64);
+        let nm = null;
+        if (id) { try { nm = await db.hget('names', id); } catch {} }
+        res.statusCode = 200;
+        return res.end(JSON.stringify({ name: nm ? String(nm) : null }));
+      }
       const mode = normMode(req.query?.mode || (req.url.includes('mode=daily') ? 'daily' : 'all'));
       const key = boardKey(mode);
       // Highest scores first, with scores. Upstash returns [member, score, member, score, ...].
@@ -141,6 +151,28 @@ export default async function handler(req, res) {
       const mode = normMode(body.mode);
       const name = cleanName(body.name);
       const score = Number(body.score);
+      const identity = body.identity ? String(body.identity).toLowerCase().slice(0, 64) : '';
+
+      // Claim: bind a username to a wallet/fid identity (persists across devices).
+      // Enforces uniqueness so two identities can't own the same name.
+      if (body.claim) {
+        const want = cleanName(body.name);
+        if (!want || !identity) {
+          res.statusCode = 400;
+          return res.end(JSON.stringify({ ok: false, error: 'invalid claim' }));
+        }
+        const owner = await db.hget('nameowner', want);
+        if (owner && String(owner) !== identity) {
+          res.statusCode = 409;
+          return res.end(JSON.stringify({ ok: false, error: 'name taken' }));
+        }
+        const prev = await db.hget('names', identity);
+        if (prev && String(prev) !== want) { try { await db.hdel('nameowner', String(prev)); } catch {} }
+        await db.hset('names', { [identity]: want });
+        await db.hset('nameowner', { [want]: identity });
+        res.statusCode = 200;
+        return res.end(JSON.stringify({ ok: true, name: want }));
+      }
 
       if (!name) {
         res.statusCode = 400;
@@ -178,9 +210,15 @@ export default async function handler(req, res) {
       if (mode === 'daily') await db.expire(key, DAILY_TTL);
 
       // Optional: store identity seam for a future wallet-based board (does not affect ranking).
-      if (body.identity) {
-        await db.hset('id:' + key, { [name]: String(body.identity).slice(0, 64) });
+      if (identity) {
+        await db.hset('id:' + key, { [name]: identity });
         if (mode === 'daily') await db.expire('id:' + key, DAILY_TTL);
+        // Soft-bind name<->identity so host handles persist too — never overwrites an existing claim.
+        try {
+          const set = await db.hsetnx('nameowner', name, identity);
+          const owner = set ? identity : await db.hget('nameowner', name);
+          if (String(owner) === identity) await db.hset('names', { [identity]: name });
+        } catch {}
       }
 
       const rank = await db.zrevrank(key, name);

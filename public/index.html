@@ -602,6 +602,23 @@ async function submitToLeaderboard(name, sc, mode){
     return res.ok;
   }catch(e){ return false; }
 }
+// Sanitize a name the same way the server does: lowercase, [a-z0-9], 1..14 chars.
+function cleanName(s){ return String(s||'').toLowerCase().replace(/[^a-z0-9]/g,'').slice(0,14); }
+function shortId(s){ s=String(s||''); return /^0x/.test(s)? s.slice(0,6)+'…'+s.slice(-4) : s; }
+// Look up the username this wallet/fid previously claimed (null if none / on error).
+async function resolveSavedName(identity){
+  try{ const r=await fetch('/api/scores?whoami='+encodeURIComponent(identity),{cache:'no-store'});
+    if(r.ok){ const d=await r.json(); return d.name||null; } }catch(e){}
+  return null;
+}
+// Bind a username to this identity on the server. {ok, error} — error 'name taken' on conflict.
+async function claimUsername(name, identity){
+  try{ const r=await fetch('/api/scores',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({claim:true, name, identity})});
+    const d=await r.json().catch(()=>({}));
+    return {ok: r.ok && d && d.ok, error: d && d.error};
+  }catch(e){ return {ok:false, error:'network'}; }
+}
 
 // =================== OVERLAY / DOM ===================
 const ovEnd=document.getElementById('ovEnd'), ovBoard=document.getElementById('ovBoard');
@@ -644,8 +661,24 @@ function renderRows(el, rows){
 function escapeHtml(s){ return (s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
 document.getElementById('submitScore').onclick=async()=>{
-  const nm=(nameInput.value||'').trim().slice(0,14);
+  let nm=(nameInput.value||'').trim().slice(0,14);
   if(!nm){ nameInput.focus(); nameInput.placeholder='enter a name first'; return; }
+  // Wallet-connected players without a saved username: bind this name to their wallet now,
+  // so it follows them on every future session and device.
+  if(Identity.identity && Identity.needsName && !Identity.claimed){
+    const cleaned=cleanName(nm);
+    if(!cleaned){ lbStatus.textContent='use letters or numbers for your name'; nameInput.focus(); return; }
+    const res=await claimUsername(cleaned, Identity.identity);
+    if(!res.ok){
+      lbStatus.textContent = res.error==='name taken' ? '“'+cleaned+'” is taken — pick another' : "couldn't save name — try again";
+      nameInput.focus(); return;
+    }
+    Identity.claimed=true; Identity.needsName=false; Identity.name=cleaned;
+    nm=cleaned; nameInput.value=cleaned; nameInput.readOnly=true; nameInput.title='Saved to your wallet';
+    document.getElementById('idName').textContent='@'+cleaned;
+    document.getElementById('idVerified').textContent='✓';
+    chime(660);
+  }
   profile.name=nm; await saveProfile();
   if(!scoreSubmitted && score>0){
     const ok=await submitToLeaderboard(nm, score, dailyMode?'daily':'all');
@@ -720,15 +753,19 @@ async function startRun(){
 // When running inside a Farcaster / Base mini-app host, use the verified account as identity:
 // prefill + lock the leaderboard name to the username and attach the wallet address (or fid) as
 // `identity`. Outside a host this all no-ops and the typed-name flow is used.
-const Identity = { name:null, identity:null, verified:false };
-function applyIdentity(user){
-  const clean=(Identity.name||'').toLowerCase().replace(/[^a-z0-9]/g,'').slice(0,14);
-  if(clean){ profile.name=clean; saveProfile();
-    if(nameInput){ nameInput.value=clean; nameInput.readOnly=true; nameInput.title='Signed in as @'+Identity.name; } }
+const Identity = { name:null, identity:null, verified:false, claimed:false, needsName:false };
+function applyIdentity(user, locked){
+  const clean=cleanName(Identity.name||'');
+  if(nameInput){
+    if(clean){ profile.name=clean; saveProfile(); nameInput.value=clean; }
+    else { nameInput.value=''; nameInput.placeholder='pick a username'; }
+    nameInput.readOnly=!!locked;
+    nameInput.title=locked?('Signed in as @'+(Identity.name||'')):'';
+  }
   const badge=document.getElementById('idBadge');
   if(badge){
-    document.getElementById('idName').textContent='@'+(Identity.name||'');
-    document.getElementById('idVerified').textContent='✓';
+    document.getElementById('idName').textContent = clean ? ('@'+Identity.name) : (shortId(Identity.identity)+' · set name');
+    document.getElementById('idVerified').textContent = clean ? '✓' : '';
     const pfp=document.getElementById('idPfp');
     if(user && user.pfpUrl){ pfp.src=user.pfpUrl; pfp.style.display='block'; } else { pfp.style.display='none'; }
     badge.style.display='flex';
@@ -744,7 +781,6 @@ async function initMiniApp(){
     try{ ctx=await Promise.race([sdk.context, new Promise(r=>setTimeout(()=>r(null),3000))]); }catch(e){}
     const user=ctx&&ctx.user;
     if(!user) return;                              // launched outside a real host
-    Identity.name=user.username||('fid'+user.fid);
     Identity.identity='fc:'+user.fid;
     Identity.verified=true;
     try{
@@ -752,7 +788,14 @@ async function initMiniApp(){
       if(provider){ const accts=await provider.request({method:'eth_accounts'});
         if(accts&&accts[0]) Identity.identity=String(accts[0]).toLowerCase(); }
     }catch(e){ /* keep fid identity */ }
-    applyIdentity(user);
+    // 1) A username this wallet/fid claimed before wins (persists across devices).
+    const saved=await resolveSavedName(Identity.identity);
+    if(saved){ Identity.name=saved; Identity.claimed=true; applyIdentity(user,true); return; }
+    // 2) Otherwise use the host-provided handle and persist it to this identity.
+    if(user.username){ Identity.name=user.username; Identity.claimed=true; applyIdentity(user,true);
+      claimUsername(cleanName(user.username), Identity.identity); return; }
+    // 3) No name available -> let the player create one (saved to their wallet on submit).
+    Identity.name=null; Identity.needsName=true; applyIdentity(user,false);
   }catch(e){ /* SDK unavailable / plain web -> typed-name flow */ }
 }
 
