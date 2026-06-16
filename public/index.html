@@ -54,11 +54,32 @@
   .status{font-size:11px;color:#9fb6e6;text-align:center;margin:6px 0;}
   #hint{position:fixed;bottom:14px;left:0;right:0;text-align:center;color:#bcd4ff;font-size:12px;
     letter-spacing:.12em;text-transform:uppercase;opacity:.7;pointer-events:none;}
+  /* top-left controls: music toggle + now-playing ticker */
+  #controls{position:absolute;top:8px;left:8px;display:flex;align-items:center;gap:8px;z-index:5;}
+  #musicBtn{width:34px;height:34px;padding:0;border-radius:10px;background:rgba(0,18,46,.55);
+    border:1.5px solid rgba(127,176,255,.45);font-size:16px;line-height:1;display:flex;
+    align-items:center;justify-content:center;backdrop-filter:blur(2px);}
+  #nowPlaying{max-width:150px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;
+    font-size:10px;color:#bcd4ff;background:rgba(0,18,46,.45);padding:6px 9px;border-radius:8px;
+    opacity:0;transition:opacity .4s;backdrop-filter:blur(2px);pointer-events:none;}
+  #nowPlaying.show{opacity:.85;}
+  /* Farcaster identity badge (top-right) — shown only inside a mini-app host */
+  #idBadge{position:absolute;top:8px;right:8px;display:none;align-items:center;gap:6px;z-index:5;
+    font-size:11px;color:#bcd4ff;background:rgba(0,18,46,.55);padding:5px 9px;border-radius:10px;
+    border:1.5px solid rgba(46,194,87,.45);backdrop-filter:blur(2px);max-width:46%;}
+  #idBadge img{width:18px;height:18px;border-radius:50%;object-fit:cover;}
+  #idBadge span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .verified{font-size:10px;color:#2ec257;}
 </style>
 </head>
 <body>
 <div id="wrap"><div id="stage">
   <canvas id="game"></canvas>
+  <div id="controls">
+    <button id="musicBtn" title="Music on/off" aria-label="Toggle music">🔈</button>
+    <div id="nowPlaying"></div>
+  </div>
+  <div id="idBadge"><img id="idPfp" alt="" src=""><span id="idName"></span><span class="verified" id="idVerified"></span></div>
   <!-- Name / game-over overlay -->
   <div id="ovEnd" class="overlay">
     <div class="card">
@@ -84,7 +105,12 @@
     <div class="card">
       <h2>🏆 Global Top Toads</h2>
       <div class="sub" id="boardSub">all-time</div>
+      <div class="btns" style="margin-top:0;margin-bottom:8px;">
+        <button class="ghost" id="tabAll">All-time</button>
+        <button class="ghost" id="tabDaily">Daily</button>
+      </div>
       <ol class="lb" id="boardList"></ol>
+      <div class="status" id="myRank"></div>
       <div class="btns"><button id="closeBoard">Back</button></div>
       <div class="note">Daily challenge resets at midnight UTC.</div>
     </div>
@@ -155,6 +181,11 @@ let mult=1, taboshiTimers=[], shields=0, flash=0, banner="", bannerT=0;
 let combo=0, comboT=0, comboBestRun=0;
 let relicsThisRun={taboshi:0,patience:0,sato:0};
 let runAch=new Set();
+// --- juice (visual only; uses Math.random so it never perturbs the daily seed) ---
+let shake=0, sparks=[], lastMilestone=0;
+function addShake(n){ shake=Math.max(shake,n); }
+function spawnSparks(x,y,color,n){ for(let i=0;i<n;i++){ const a=Math.random()*Math.PI*2, sp=1+Math.random()*3.5;
+  sparks.push({x,y,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp,life:24+Math.random()*16,color}); } }
 const lore=["patience","still water","wgmi","toby smiles","slow is fast","based"];
 let loreTxt="";
 
@@ -165,8 +196,8 @@ function streakShields(){ const st=profile.streak||0; if(st>=14) return 3; if(st
 
 function reset(){
   rng = dailyMode ? mulberry32(seedFromString('toby-'+utcDayKey())) : Math.random;
-  toad={x:110,y:H/2,vy:0,r:19,rot:0};
-  pipes=[]; items=[]; flakes=[]; pops=[];
+  toad={x:110,y:H/2,vy:0,r:19,rot:0,sq:0};
+  pipes=[]; items=[]; flakes=[]; pops=[]; sparks=[]; shake=0; lastMilestone=0;
   score=0; frame=0; state='ready';
   speed=BASE_SPEED; gap=BASE_GAP;
   mult=1; taboshiTimers=[]; shields=0; flash=0; banner=""; bannerT=0;
@@ -190,13 +221,13 @@ function addPipe(x){
 }
 
 function flap(){
-  if(state==='ready'){ state='play'; }
-  if(state==='play'){ toad.vy=FLAP; ribbit(); }
+  if(state==='ready'){ state='play'; startRun(); }   // request an anti-cheat run token
+  if(state==='play'){ toad.vy=FLAP; toad.sq=1; ribbit(); }
   // (dead state handled by overlay buttons now)
 }
 function onPress(e){
   if(state==='dead') return;            // overlay buttons take over
-  audio(); flap();
+  audio(); try{ Music.start(); }catch(_){}; flap();
 }
 ['mousedown','touchstart','keydown'].forEach(ev=>{
   cv.addEventListener(ev, e=>{
@@ -225,6 +256,7 @@ function pillar(x,y,w,h,isTop){
 function drawToad(){
   const {x,y,r,rot}=toad;
   ctx.save(); ctx.translate(x,y); ctx.rotate(rot); ctx.scale(r/19,r/19);
+  const sq=toad.sq||0; ctx.scale(1-0.16*sq, 1+0.16*sq); // hop squash-and-stretch
   ctx.lineJoin='round'; const OUT='#06122e';
   for(let si=0; si<shields; si++){ ctx.strokeStyle='rgba(224,85,46,'+(0.9-si*0.18)+')'; ctx.lineWidth=2.5;
     ctx.beginPath(); ctx.arc(0,2,32+si*4,0,Math.PI*2); ctx.stroke(); }
@@ -375,6 +407,10 @@ function update(){
   if(comboT>0){ comboT--; if(comboT===0) combo=0; }
   for(const p of pops){ p.y-=0.6; p.life--; }
   pops=pops.filter(p=>p.life>0);
+  if(shake>0) shake-=1;
+  if(toad && toad.sq>0) toad.sq=Math.max(0, toad.sq-0.12);
+  for(const s of sparks){ s.vy+=0.12; s.x+=s.vx; s.y+=s.vy; s.life--; }
+  sparks=sparks.filter(s=>s.life>0);
 
   if(state==='play'){
     // difficulty ramp by score
@@ -387,7 +423,9 @@ function update(){
       p.x-=speed;
       if(!p.passed && p.x+PIPE_W<toad.x){ p.passed=true; const g=mult; score+=g;
         if(score%5<g) loreTxt=lore[Math.floor(rng()*lore.length)];
-        if(score>profile.best) profile.best=score; }
+        if(score>profile.best) profile.best=score;
+        if(score>=lastMilestone+25){ lastMilestone=Math.floor(score/25)*25;
+          banner='🔥 '+lastMilestone+' — keep hopping!'; bannerT=90; addShake(5); chime(784); } }
     }
     if(pipes.length && pipes[0].x<-PIPE_W){ pipes.shift();
       addPipe(pipes[pipes.length-1].x + 230); }
@@ -396,6 +434,8 @@ function update(){
       if(!it.got){ const dy=toad.y-it.y, dx=toad.x-it.x;
         if(dx*dx+dy*dy<(toad.r+16)*(toad.r+16)){ it.got=true; addCombo();
           relicsThisRun[it.type]++;
+          spawnSparks(it.x,it.y, it.type==='taboshi'?'#5fd07a':it.type==='patience'?'#e0552e':'#7fb0ff', 14);
+          addShake(4);
           const cb=combo>=2?combo:0;
           if(it.type==='taboshi'){ taboshiTimers.push(420); mult=1+taboshiTimers.length; chime(523); banner="$TABOSHI — yield x"+mult; bannerT=110; }
           else if(it.type==='patience'){
@@ -419,7 +459,8 @@ function update(){
       if(toad.x+r>p.x && toad.x-r<p.x+PIPE_W){
         if(toad.y-r<p.top || toad.y+r>p.top+p.gap){
           if(shields>0){ shields--; flash=12; toad.vy=FLAP*0.7; p.passed=true; chime(300);
-            banner="patience held — survived! ("+shields+" left)"; bannerT=90; toad.x=p.x-r-2; }
+            banner="patience held — survived! ("+shields+" left)"; bannerT=90; toad.x=p.x-r-2;
+            addShake(9); spawnSparks(toad.x,toad.y,'#e0552e',18); }
           else die(); }
       }
     }
@@ -429,6 +470,7 @@ function update(){
   } else if(state==='ready'){ toad.y=H/2+Math.sin(frame*0.08)*8; toad.rot=0; }
 }
 function die(){ if(state!=='play') return; state='dead'; croak();
+  addShake(16); spawnSparks(toad.x,toad.y,'#7fb0ff',22);
   if(score>profile.best) profile.best=score;
   profile.totalRuns++;
   // streak: count consecutive UTC days played
@@ -446,6 +488,8 @@ function die(){ if(state!=='play') return; state='dead'; croak();
 
 // ---------- RENDER ----------
 function render(){
+  ctx.save();
+  if(shake>0){ const m=shake*0.45; ctx.translate((Math.random()-.5)*m,(Math.random()-.5)*m); }
   drawBackground();
   for(const it of items) drawItem(it);
   for(const p of pipes){ const sway=Math.sin(frame*0.02+p.sway)*1.5;
@@ -454,6 +498,9 @@ function render(){
   for(const f of flakes){ ctx.globalAlpha=Math.min(1,f.life/30);
     ctx.fillStyle=f.life%6<3?'#ffd84a':'#ffb300'; ctx.beginPath(); ctx.arc(f.x,f.y,2.6,0,Math.PI*2); ctx.fill(); ctx.globalAlpha=1; }
   drawGround(); drawToad();
+  for(const s of sparks){ ctx.globalAlpha=Math.min(1,s.life/24); ctx.fillStyle=s.color;
+    ctx.beginPath(); ctx.arc(s.x,s.y,2.4,0,Math.PI*2); ctx.fill(); }
+  ctx.globalAlpha=1;
   if(flash>0){ ctx.fillStyle='rgba(224,85,46,'+(flash/24)+')'; ctx.fillRect(0,0,W,H); }
   for(const p of pops){ ctx.globalAlpha=Math.min(1,p.life/20); ctx.fillStyle=p.color;
     ctx.font='bold 13px ui-monospace,monospace'; ctx.textAlign='center'; ctx.fillText(p.txt,p.x,p.y); ctx.globalAlpha=1; }
@@ -463,6 +510,7 @@ function render(){
     ctx.fillStyle='#eef4ff'; ctx.font='bold 13px ui-monospace,monospace'; ctx.textAlign='center';
     ctx.fillText(banner,W/2,136); ctx.globalAlpha=1; }
   if(state==='ready') readyPanel();
+  ctx.restore();
 }
 function loop(){ update(); render(); requestAnimationFrame(loop); }
 
@@ -491,12 +539,14 @@ async function fetchLeaderboard(mode){ // mode: 'all' | 'daily'
   }catch(e){ return null; } // null signals "couldn't load" to the renderer
 }
 async function submitToLeaderboard(name, sc, mode){
-  // identity is reserved for a future wallet-based board; pass undefined for now.
+  // identity = connected wallet / Farcaster fid when inside a mini-app host (else undefined).
+  // token = the signed run token from startRun() for server-side anti-cheat (else undefined).
   try{
     const res=await fetch('/api/scores',{
       method:'POST',
       headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({name, score:sc, mode:mode==='daily'?'daily':'all'})
+      body:JSON.stringify({name, score:sc, mode:mode==='daily'?'daily':'all',
+        identity:Identity.identity||undefined, token:runToken||undefined})
     });
     return res.ok;
   }catch(e){ return false; }
@@ -546,9 +596,11 @@ document.getElementById('submitScore').onclick=async()=>{
   const nm=(nameInput.value||'').trim().slice(0,14);
   if(!nm){ nameInput.focus(); nameInput.placeholder='enter a name first'; return; }
   profile.name=nm; await saveProfile();
-  if(!scoreSubmitted && score>0){ scoreSubmitted=true;
-    await submitToLeaderboard(nm, score, dailyMode?'daily':'all');
-    chime(700);
+  if(!scoreSubmitted && score>0){
+    const ok=await submitToLeaderboard(nm, score, dailyMode?'daily':'all');
+    if(ok){ scoreSubmitted=true; chime(700); await renderEndBoard(); }
+    else { lbStatus.textContent="couldn't save score — tap Submit to retry"; }
+    return;
   }
   await renderEndBoard();
 };
@@ -569,29 +621,135 @@ document.getElementById('shareScore').onclick=async()=>{
 document.getElementById('playAgain').onclick=()=>{ ovEnd.classList.remove('show'); reset(); };
 document.getElementById('viewBoard').onclick=async()=>{ ovEnd.classList.remove('show'); await openBoard(); };
 document.getElementById('closeBoard').onclick=()=>{ ovBoard.classList.remove('show'); ovEnd.classList.add('show'); };
+let boardMode='all';
+const tabAll=document.getElementById('tabAll'), tabDaily=document.getElementById('tabDaily');
+const myRank=document.getElementById('myRank');
+function syncTabs(){ tabAll.style.opacity=boardMode==='all'?'1':'.55'; tabDaily.style.opacity=boardMode==='daily'?'1':'.55'; }
 async function openBoard(){
-  ovBoard.classList.add('show'); boardSub.textContent=dailyMode?'daily ('+utcDayKey()+')':'all-time';
-  boardList.innerHTML='<li><span class="nm" style="color:#6f86b8">loading…</span></li>';
-  const rows=await fetchLeaderboard(dailyMode?'daily':'all');
-  renderRows(boardList, rows);
+  boardMode=dailyMode?'daily':'all';
+  ovBoard.classList.add('show');
+  await loadBoard();
 }
+async function loadBoard(){
+  syncTabs();
+  boardSub.textContent=boardMode==='daily'?'daily ('+utcDayKey()+')':'all-time';
+  boardList.innerHTML='<li><span class="nm" style="color:#6f86b8">loading…</span></li>';
+  myRank.textContent='';
+  const rows=await fetchLeaderboard(boardMode);
+  renderRows(boardList, rows);
+  if(rows && rows.length){
+    const me=(profile.name||'').toLowerCase();
+    const i=rows.findIndex(r=>(r.name||'').toLowerCase()===me);
+    myRank.textContent = i>=0 ? ('you: #'+(i+1)+' · '+rows[i].score) : (me?'you: not in top 20 yet':'');
+  }
+}
+tabAll.onclick=()=>{ boardMode='all'; loadBoard(); };
+tabDaily.onclick=()=>{ boardMode='daily'; loadBoard(); };
 
 // Daily toggle (only on ready/dead)
 window.addEventListener('keydown',e=>{
   if(e.key==='d'||e.key==='D'){ if(state==='ready'){ dailyMode=!dailyMode; reset(); } }
 });
 
+// =================== ANTI-CHEAT RUN TOKEN ===================
+// At the start of each run we ask the server for a short-lived signed token. On submit we send it
+// back so the server can verify the run is real (valid HMAC, single-use nonce, plausible duration).
+// Fully graceful: if this fetch fails, runToken stays null and the score just may not be recorded —
+// gameplay is never affected.
+let runToken=null;
+async function startRun(){
+  runToken=null;
+  try{
+    const r=await fetch('/api/scores?start=1',{cache:'no-store'});
+    if(r.ok){ const d=await r.json(); runToken=d.token||null; }
+  }catch(e){ /* offline / not configured -> submit will be tokenless */ }
+}
+
+// =================== FARCASTER / BASE IDENTITY ===================
+// When running inside a Farcaster / Base mini-app host, use the verified account as identity:
+// prefill + lock the leaderboard name to the username and attach the wallet address (or fid) as
+// `identity`. Outside a host this all no-ops and the typed-name flow is used.
+const Identity = { name:null, identity:null, verified:false };
+function applyIdentity(user){
+  const clean=(Identity.name||'').toLowerCase().replace(/[^a-z0-9]/g,'').slice(0,14);
+  if(clean){ profile.name=clean; saveProfile();
+    if(nameInput){ nameInput.value=clean; nameInput.readOnly=true; nameInput.title='Signed in as @'+Identity.name; } }
+  const badge=document.getElementById('idBadge');
+  if(badge){
+    document.getElementById('idName').textContent='@'+(Identity.name||'');
+    document.getElementById('idVerified').textContent='✓';
+    const pfp=document.getElementById('idPfp');
+    if(user && user.pfpUrl){ pfp.src=user.pfpUrl; pfp.style.display='block'; } else { pfp.style.display='none'; }
+    badge.style.display='flex';
+  }
+}
+async function initMiniApp(){
+  try{
+    const mod=await import('https://esm.sh/@farcaster/miniapp-sdk');
+    const sdk=mod.sdk||(mod.default&&mod.default.sdk)||mod.default;
+    if(!sdk||!sdk.actions) return;
+    try{ await sdk.actions.ready(); }catch(e){}   // dismiss the host splash screen
+    let ctx=null;
+    try{ ctx=await Promise.race([sdk.context, new Promise(r=>setTimeout(()=>r(null),3000))]); }catch(e){}
+    const user=ctx&&ctx.user;
+    if(!user) return;                              // launched outside a real host
+    Identity.name=user.username||('fid'+user.fid);
+    Identity.identity='fc:'+user.fid;
+    Identity.verified=true;
+    try{
+      const provider=sdk.wallet&&sdk.wallet.getEthereumProvider&&await sdk.wallet.getEthereumProvider();
+      if(provider){ const accts=await provider.request({method:'eth_accounts'});
+        if(accts&&accts[0]) Identity.identity=String(accts[0]).toLowerCase(); }
+    }catch(e){ /* keep fid identity */ }
+    applyIdentity(user);
+  }catch(e){ /* SDK unavailable / plain web -> typed-name flow */ }
+}
+
+// =================== BACKGROUND MUSIC (toadvault.xyz catalog) ===================
+// Streams the Tobyworld tracks hosted via toadvault.xyz. Tries the live catalog first
+// (CORS-enabled) and falls back to the bundled /music.json. Plays through an <audio> element so it
+// mixes with the synthesized SFX; volume kept low so hops/croaks stay audible. Starts on the first
+// user gesture (autoplay policy), is shuffled, loops the playlist, and the toggle is remembered.
+const Music=(function(){
+  const el=new Audio(); el.volume=0.30; el.preload='auto';
+  const btn=document.getElementById('musicBtn'), np=document.getElementById('nowPlaying');
+  let tracks=[], order=[], idx=0, started=false, loading=null;
+  let enabled=(localStorage.getItem('hoppytoads.music')||'on')!=='off';
+  function setIcon(){ btn.textContent=enabled?'🔊':'🔇'; }
+  function shuffle(a){ for(let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } return a; }
+  function load(){
+    if(loading) return loading;
+    loading=(async()=>{
+      let list=null;
+      try{ const r=await fetch('https://toadvault.xyz/data/music.json',{cache:'no-store'});
+        if(r.ok){ const d=await r.json(); if(Array.isArray(d)) list=d.map(t=>({title:t.title,url:t.audioUrl})); } }catch(e){}
+      if(!list||!list.length){ try{ const r=await fetch('/music.json'); const d=await r.json(); list=d.tracks||[]; }catch(e){} }
+      tracks=(list||[]).filter(t=>t&&t.url);
+      order=shuffle(tracks.map((_,i)=>i)); idx=0;
+    })();
+    return loading;
+  }
+  function showNP(title){ np.textContent='♪ '+title; np.classList.add('show');
+    clearTimeout(showNP._t); showNP._t=setTimeout(()=>np.classList.remove('show'),4500); }
+  function playCurrent(){
+    if(!enabled||!tracks.length) return;
+    const t=tracks[order[idx%order.length]];
+    el.src=t.url; el.play().then(()=>showNP(t.title)).catch(()=>{});
+  }
+  el.addEventListener('ended',()=>{ idx++; playCurrent(); });
+  let errs=0;
+  el.addEventListener('error',()=>{ errs++; if(errs<tracks.length){ idx++; setTimeout(playCurrent,300); } });
+  async function start(){ if(started||!enabled) return; started=true; await load(); if(enabled) playCurrent(); }
+  function toggle(){ enabled=!enabled; localStorage.setItem('hoppytoads.music',enabled?'on':'off'); setIcon();
+    if(enabled){ started=false; start(); } else { el.pause(); np.classList.remove('show'); } }
+  if(btn) btn.addEventListener('click',e=>{ e.stopPropagation(); toggle(); });
+  setIcon(); load();   // warm the catalog so the first hop starts music instantly
+  return { start, toggle };
+})();
+
 // boot
+initMiniApp();
 loadProfile().then(()=>{ reset(); loop(); });
-</script>
-<!-- Farcaster / Base Mini App: dismiss the host splash screen once the game has booted.
-     Loaded as a separate module so the standalone game is unaffected — it no-ops in a normal
-     browser and if the SDK can't be fetched (e.g. offline). -->
-<script type="module">
-  try {
-    const { sdk } = await import('https://esm.sh/@farcaster/miniapp-sdk');
-    await sdk.actions.ready();
-  } catch (e) { /* not inside a Mini App host, or offline — ignore */ }
 </script>
 </body>
 </html>

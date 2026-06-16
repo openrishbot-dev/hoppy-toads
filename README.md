@@ -18,6 +18,22 @@ backend, and it degrades gracefully (if the API is down the game still plays; th
 - Combo chains, difficulty ramp, 8 achievements, **daily challenge** (press `D` on the start
   screen — seeded, repeatable course), daily streak rewards (free starting shields), and a global
   leaderboard (all-time + daily).
+- **Juice:** screen shake, relic-pickup sparkles, hop squash-and-stretch, and a milestone
+  celebration every 25 points.
+- **Background music** streamed from the [toadvault.xyz](https://toadvault.xyz) Tobyworld catalog
+  (🔊 toggle, top-left). The game fetches the live catalog (`/data/music.json`, CORS-enabled) and
+  falls back to the bundled [`public/music.json`](public/music.json); tracks shuffle and loop. Music
+  starts on the first hop (autoplay policy) and the on/off choice is remembered. SFX stay audible.
+
+## Farcaster / Base identity
+
+When launched inside a Farcaster or Base mini-app host, the game dynamically imports the mini-app
+SDK (`@farcaster/miniapp-sdk`, from a CDN — still no build step), calls `sdk.actions.ready()` to
+dismiss the host splash, and uses the **verified account** as the leaderboard identity: the username
+prefills and locks the name field (a ✓ badge appears top-right) and the connected wallet address (or
+the `fid` fallback) is sent as the `identity` field. Outside a host it all no-ops and the classic
+typed-name flow is used. The core canvas game still runs offline — only music, the SDK, and the
+leaderboard touch the network, and each degrades gracefully.
 
 ## Project layout
 
@@ -63,15 +79,25 @@ settings for production.
 `api/scores.js` (Vercel serverless function, Upstash Redis sorted sets):
 
 - `GET /api/scores?mode=all|daily` → `{ mode, rows: [{name, score}] }`, top 20 desc.
-- `POST /api/scores` `{ name, score, mode }` → stores best-per-name. Validates name (1–14 chars,
-  `[a-z0-9]`), score (non-negative integer ≤ 100000), and rate-limits writes per IP (30/min).
-- Boards: `lb:all` (all-time) and `lb:daily:<UTC-date>` (expires ~36h). An `identity` field is
-  accepted but unused — a seam for a future wallet-based board.
+- `GET /api/scores?start=1` → `{ token }` — a signed, single-use **anti-cheat run token** the client
+  requests when a run begins (`token: null` if no secret is configured).
+- `POST /api/scores` `{ name, score, mode, identity?, token? }` → stores best-per-name. Validates name
+  (1–14 chars, `[a-z0-9]`), score (non-negative integer ≤ 100000), and rate-limits writes per IP
+  (30/min).
+- Boards: `lb:all` (all-time) and `lb:daily:<UTC-date>` (expires ~36h). The `identity` field
+  (wallet address / Farcaster fid) is stored alongside the board for a future wallet-native board.
 
-> ⚠️ **Security note:** scores are client-submitted with no server-side game validation, so they are
-> inherently spoofable. For v1 this is acceptable for a fun board; the rate-limit + sanity caps
-> limit abuse. Anti-cheat (seed/replay verification) is out of scope. Player names are sanitized on
-> both write (server) and render (client HTML-escapes). Nothing here can block gameplay.
+**Anti-cheat (signed run tokens).** When a secret is available — `HOPPY_SECRET`, or the Upstash REST
+token reused automatically — the server issues an HMAC-signed token at run start and, on submit,
+verifies the signature, enforces single use (nonce in Redis), and rejects scores that arrived
+implausibly fast (`< 80 ms/point`). This blocks `curl`-forged and replayed scores. It stays
+graceful: if the token fetch fails the player just sees "couldn't save score — retry," and gameplay
+is never blocked.
+
+> ⚠️ **Security note:** the token raises the bar significantly but is not a full server-authoritative
+> anti-cheat (no replay/seed verification of the actual run), so a determined cheater who drives the
+> real client could still inflate within the time bound. For a fun board this is the right trade-off.
+> Player names are sanitized on both write (server) and render (client HTML-escapes).
 
 ## Set the domain after deploy
 

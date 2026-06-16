@@ -1,0 +1,20 @@
+{
+  "source": "toadvault.xyz",
+  "note": "Bundled fallback. At runtime the game first tries the live catalog at https://toadvault.xyz/data/music.json (CORS-enabled) and only uses this list if that fetch fails. Tracks stream from Suno's CDN.",
+  "tracks": [
+    { "title": "T.O.B.Y.W.O.R.L.D", "url": "https://cdn1.suno.ai/a0fe31f5-2e23-42b0-abd8-d0e39bf215d3.mp3" },
+    { "title": "Toby with the Crown", "url": "https://cdn1.suno.ai/2d9114cd-5d1a-472d-9a24-7e0c1c68ee21.mp3" },
+    { "title": "Toadgang Lore", "url": "https://cdn1.suno.ai/1ebb5a46-f285-49c2-a9d6-f084be3a13b3.mp3" },
+    { "title": "Ridin' to Tobyworld", "url": "https://cdn1.suno.ai/cd5c77bb-4dc5-4922-a0ae-049f2c0caa62.mp3" },
+    { "title": "Break on Through… To TOBYWORLD", "url": "https://cdn1.suno.ai/9dbd00b8-56e7-45f9-b33b-a8eaf66c9418.mp3" },
+    { "title": "A Ballad of Patience and Still Water", "url": "https://cdn1.suno.ai/3b5f2d8a-b33b-4e39-ae07-97530fec9d68.mp3" },
+    { "title": "Tobyworld Dreams", "url": "https://cdn1.suno.ai/7415c597-223a-447b-9069-f45293085aac.mp3" },
+    { "title": "Long Live Taboshi", "url": "https://cdn1.suno.ai/8e8b8810-ee24-475e-93af-9e3ecf9791a9.mp3" },
+    { "title": "BASEd Bushido Code", "url": "https://cdn1.suno.ai/68598238-f0ce-488c-8bbd-2fbc35685b48.mp3" },
+    { "title": "Infinite Millionaires", "url": "https://cdn1.suno.ai/36ccfff4-e4c1-4203-b88c-46e8be79db73.mp3" },
+    { "title": "Genjitsu Rising", "url": "https://cdn1.suno.ai/9435fea4-8904-4889-8e05-e32e28ec0c8a.mp3" },
+    { "title": "The Seven Virtues of Tobyworld", "url": "https://cdn1.suno.ai/7a0feb45-e5ab-4a11-a056-0227276165b5.mp3" },
+    { "title": "Oracle Toads", "url": "https://cdn1.suno.ai/2cc8ed6e-d5d1-4144-a257-6de2f1c36999.mp3" },
+    { "title": "Still Water Flow", "url": "https://cdn1.suno.ai/0d96c28a-8fb8-4464-9acf-722673ca574c.mp3" }
+  ]
+}

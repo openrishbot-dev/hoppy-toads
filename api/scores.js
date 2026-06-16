@@ -1,7 +1,8 @@
 // Hoppy Toads — global leaderboard backend (Vercel serverless function).
 //
-// GET  /api/scores?mode=all|daily   -> { mode, rows: [{name, score}], stale? }  top 20 desc
-// POST /api/scores  { name, score, mode, identity? } -> { ok, rank? }
+// GET  /api/scores?mode=all|daily   -> { mode, rows: [{name, score}] }  top 20 desc
+// GET  /api/scores?start=1           -> { token } anti-cheat run token (token:null if no secret)
+// POST /api/scores  { name, score, mode, identity?, token? } -> { ok, rank? }
 //
 // Storage: Upstash Redis sorted sets, one member per player-name (best score kept via GT).
 //   lb:all                          (all-time board, never expires)
@@ -11,6 +12,7 @@
 // catches the error and the board just shows "couldn't load leaderboard" — gameplay is unaffected.
 
 import { Redis } from '@upstash/redis';
+import crypto from 'crypto';
 
 const MAX_NAME = 14;
 const MAX_SCORE = 100000;
@@ -18,6 +20,34 @@ const TOP_N = 20;
 const DAILY_TTL = 36 * 60 * 60; // seconds
 const RATE_LIMIT = 30; // writes per IP per window
 const RATE_WINDOW = 60; // seconds
+
+// ---- Anti-cheat (signed run tokens) ----
+// On run start the client GETs /api/scores?start=1 and receives a short-lived HMAC-signed token.
+// On submit it sends the token back; we verify the signature, enforce single-use (nonce stored in
+// Redis), and reject scores that arrived implausibly fast for their value. It activates whenever a
+// secret is available — we reuse the Upstash REST token as the HMAC key so no extra config is
+// needed — and degrades gracefully: if no secret is set, scoring works exactly as before.
+const TOKEN_TTL = 2 * 60 * 60;     // seconds a run token / nonce stays valid
+const MIN_MS_PER_POINT = 80;       // a score of N must take at least N*80ms of real time
+function getSecret() {
+  return process.env.HOPPY_SECRET || process.env.UPSTASH_REDIS_REST_TOKEN || process.env.KV_REST_API_TOKEN || '';
+}
+function b64url(buf) { return Buffer.from(buf).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); }
+function signToken(secret) {
+  const nonce = crypto.randomBytes(9).toString('hex');
+  const payload = b64url(JSON.stringify({ t: Date.now(), n: nonce }));
+  const sig = b64url(crypto.createHmac('sha256', secret).update(payload).digest());
+  return { token: payload + '.' + sig, nonce };
+}
+function verifyToken(token, secret) {
+  if (!token || typeof token !== 'string' || !token.includes('.')) return null;
+  const [payload, sig] = token.split('.');
+  const expect = b64url(crypto.createHmac('sha256', secret).update(payload).digest());
+  const a = Buffer.from(sig), b = Buffer.from(expect);
+  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
+  try { return JSON.parse(Buffer.from(payload.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8')); }
+  catch { return null; }
+}
 
 let redis = null;
 function getRedis() {
@@ -75,6 +105,15 @@ export default async function handler(req, res) {
 
   try {
     if (req.method === 'GET') {
+      // Run-start: issue an anti-cheat token (no-op token if no secret is configured).
+      if (req.query?.start || req.url.includes('start=1')) {
+        const secret = getSecret();
+        if (!secret) { res.statusCode = 200; return res.end(JSON.stringify({ token: null })); }
+        const { token, nonce } = signToken(secret);
+        await db.set('nc:' + nonce, 1, { ex: TOKEN_TTL });
+        res.statusCode = 200;
+        return res.end(JSON.stringify({ token }));
+      }
       const mode = normMode(req.query?.mode || (req.url.includes('mode=daily') ? 'daily' : 'all'));
       const key = boardKey(mode);
       // Highest scores first, with scores. Upstash returns [member, score, member, score, ...].
@@ -110,6 +149,27 @@ export default async function handler(req, res) {
       if (!Number.isInteger(score) || score < 0 || score > MAX_SCORE) {
         res.statusCode = 400;
         return res.end(JSON.stringify({ ok: false, error: 'invalid score' }));
+      }
+
+      // Anti-cheat: when a secret is configured, require a valid, single-use, time-plausible token.
+      const secret = getSecret();
+      if (secret) {
+        const claims = verifyToken(body.token, secret);
+        if (!claims || !claims.n || !Number.isFinite(claims.t)) {
+          res.statusCode = 403;
+          return res.end(JSON.stringify({ ok: false, error: 'bad token' }));
+        }
+        // single-use: DEL returns 1 only the first time this nonce is redeemed
+        const fresh = await db.del('nc:' + claims.n);
+        if (!fresh) {
+          res.statusCode = 403;
+          return res.end(JSON.stringify({ ok: false, error: 'token reused or expired' }));
+        }
+        const elapsed = Date.now() - claims.t;
+        if (elapsed < score * MIN_MS_PER_POINT) {
+          res.statusCode = 403;
+          return res.end(JSON.stringify({ ok: false, error: 'implausible run' }));
+        }
       }
 
       const key = boardKey(mode);
