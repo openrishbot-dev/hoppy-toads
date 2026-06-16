@@ -54,11 +54,14 @@
   .status{font-size:11px;color:#9fb6e6;text-align:center;margin:6px 0;}
   #hint{position:fixed;bottom:14px;left:0;right:0;text-align:center;color:#bcd4ff;font-size:12px;
     letter-spacing:.12em;text-transform:uppercase;opacity:.7;pointer-events:none;}
-  /* top-left controls: music toggle + now-playing ticker */
+  /* top-left controls: transport (prev/play-pause/next) + now-playing ticker */
   #controls{position:absolute;top:8px;left:8px;display:flex;align-items:center;gap:8px;z-index:5;}
-  #musicBtn{width:34px;height:34px;padding:0;border-radius:10px;background:rgba(0,18,46,.55);
-    border:1.5px solid rgba(127,176,255,.45);font-size:16px;line-height:1;display:flex;
-    align-items:center;justify-content:center;backdrop-filter:blur(2px);}
+  #transport{display:flex;align-items:center;gap:4px;}
+  #transport button{width:34px;height:34px;padding:0;border-radius:10px;background:rgba(0,18,46,.55);
+    border:1.5px solid rgba(127,176,255,.45);font-size:15px;line-height:1;display:flex;
+    align-items:center;justify-content:center;backdrop-filter:blur(2px);color:#cfe0ff;cursor:pointer;}
+  #transport button:active{background:rgba(0,18,46,.8);}
+  #playBtn{font-size:16px;}
   #nowPlaying{max-width:150px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;
     font-size:10px;color:#bcd4ff;background:rgba(0,18,46,.45);padding:6px 9px;border-radius:8px;
     opacity:0;transition:opacity .4s;backdrop-filter:blur(2px);pointer-events:none;}
@@ -76,7 +79,11 @@
 <div id="wrap"><div id="stage">
   <canvas id="game"></canvas>
   <div id="controls">
-    <button id="musicBtn" title="Music on/off" aria-label="Toggle music">🔈</button>
+    <div id="transport">
+      <button id="prevBtn" title="Previous track" aria-label="Previous track">⏮</button>
+      <button id="playBtn" title="Play/pause" aria-label="Play or pause music">▶</button>
+      <button id="nextBtn" title="Next track" aria-label="Next track">⏭</button>
+    </div>
     <div id="nowPlaying"></div>
   </div>
   <div id="idBadge"><img id="idPfp" alt="" src=""><span id="idName"></span><span class="verified" id="idVerified"></span></div>
@@ -712,10 +719,14 @@ async function initMiniApp(){
 // user gesture (autoplay policy), is shuffled, loops the playlist, and the toggle is remembered.
 const Music=(function(){
   const el=new Audio(); el.volume=0.30; el.preload='auto';
-  const btn=document.getElementById('musicBtn'), np=document.getElementById('nowPlaying');
-  let tracks=[], order=[], idx=0, started=false, loading=null;
+  const playBtn=document.getElementById('playBtn'),
+        prevBtn=document.getElementById('prevBtn'),
+        nextBtn=document.getElementById('nextBtn'),
+        np=document.getElementById('nowPlaying');
+  let tracks=[], order=[], idx=0, started=false, loading=null, playing=false;
+  // remembered preference: did the user leave the music on or off last time?
   let enabled=(localStorage.getItem('hoppytoads.music')||'on')!=='off';
-  function setIcon(){ btn.textContent=enabled?'🔊':'🔇'; }
+  function setIcon(){ if(playBtn) playBtn.textContent=playing?'⏸':'▶'; }
   function shuffle(a){ for(let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } return a; }
   function load(){
     if(loading) return loading;
@@ -731,20 +742,31 @@ const Music=(function(){
   }
   function showNP(title){ np.textContent='♪ '+title; np.classList.add('show');
     clearTimeout(showNP._t); showNP._t=setTimeout(()=>np.classList.remove('show'),4500); }
+  function pick(n){ return ((n%order.length)+order.length)%order.length; } // wrap, never negative
   function playCurrent(){
-    if(!enabled||!tracks.length) return;
-    const t=tracks[order[idx%order.length]];
-    el.src=t.url; el.play().then(()=>showNP(t.title)).catch(()=>{});
+    if(!tracks.length) return;
+    idx=pick(idx);
+    const t=tracks[order[idx]];
+    el.src=t.url; el.play().then(()=>{ playing=true; setIcon(); showNP(t.title); }).catch(()=>{});
   }
   el.addEventListener('ended',()=>{ idx++; playCurrent(); });
   let errs=0;
   el.addEventListener('error',()=>{ errs++; if(errs<tracks.length){ idx++; setTimeout(playCurrent,300); } });
-  async function start(){ if(started||!enabled) return; started=true; await load(); if(enabled) playCurrent(); }
-  function toggle(){ enabled=!enabled; localStorage.setItem('hoppytoads.music',enabled?'on':'off'); setIcon();
-    if(enabled){ started=false; start(); } else { el.pause(); np.classList.remove('show'); } }
-  if(btn) btn.addEventListener('click',e=>{ e.stopPropagation(); toggle(); });
+  // first user gesture: auto-start unless the user had turned music off last session
+  async function start(){ if(started||!enabled) return; started=true; await load(); playCurrent(); }
+  async function togglePlay(){
+    if(playing){ el.pause(); playing=false; enabled=false; np.classList.remove('show'); }
+    else { enabled=true; if(!tracks.length){ await load(); } started=true;
+      if(el.src){ el.play().then(()=>{ playing=true; setIcon(); }).catch(()=>{}); } else { playCurrent(); } }
+    localStorage.setItem('hoppytoads.music',enabled?'on':'off'); setIcon();
+  }
+  async function step(d){ enabled=true; localStorage.setItem('hoppytoads.music','on'); started=true;
+    if(!tracks.length){ await load(); } idx+=d; playCurrent(); }
+  if(playBtn) playBtn.addEventListener('click',e=>{ e.stopPropagation(); togglePlay(); });
+  if(prevBtn) prevBtn.addEventListener('click',e=>{ e.stopPropagation(); step(-1); });
+  if(nextBtn) nextBtn.addEventListener('click',e=>{ e.stopPropagation(); step(1); });
   setIcon(); load();   // warm the catalog so the first hop starts music instantly
-  return { start, toggle };
+  return { start, toggle:togglePlay };
 })();
 
 // boot
