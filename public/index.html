@@ -247,6 +247,16 @@ function onPress(e){
 window.addEventListener('keydown',e=>{ if(e.code==='Space' && state!=='dead'){ audio(); flap(); }});
 
 // ---------- DRAW: pillars, toby, relics (unchanged visuals) ----------
+// Base brand mark: a solid disc with a horizontal slot notched into its left
+// side (reads as a "backwards C"). Builds the path; caller sets fillStyle + fill().
+function baseLogo(cx,cy,r){
+  const h=0.082*r, inX=cx+0.324*r, a=Math.PI-Math.atan2(0.082,1);
+  ctx.beginPath();
+  ctx.moveTo(inX,cy-h);
+  ctx.arc(cx,cy,r,-a,a,false);   // long way around the right, leaving the left gap
+  ctx.lineTo(inX,cy+h);
+  ctx.closePath();
+}
 function pillar(x,y,w,h,isTop){
   ctx.save(); ctx.translate(x,y);
   const g=ctx.createLinearGradient(0,0,w,0);
@@ -256,8 +266,7 @@ function pillar(x,y,w,h,isTop){
   ctx.fillStyle='rgba(255,255,255,.18)'; ctx.beginPath(); ctx.roundRect(7,6,9,h-12,5); ctx.fill();
   const capY=isTop?h-20:0; ctx.fillStyle='#1f64ff'; ctx.strokeStyle='#001a4d';
   ctx.beginPath(); ctx.roundRect(-8,capY,w+16,22,9); ctx.fill(); ctx.stroke();
-  ctx.strokeStyle='rgba(255,255,255,.85)'; ctx.lineWidth=3.5;
-  ctx.beginPath(); ctx.arc(w/2,capY+11,6.5,0.5,Math.PI*2-0.5); ctx.stroke();
+  ctx.fillStyle='rgba(255,255,255,.92)'; baseLogo(w/2,capY+11,7); ctx.fill();
   ctx.restore();
 }
 function drawToad(){
@@ -329,9 +338,9 @@ function drawBackground(){
   ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
   ctx.fillStyle='rgba(220,233,255,.55)'; ctx.beginPath(); ctx.arc(W-70,80,42,0,Math.PI*2); ctx.fill();
   ctx.fillStyle='rgba(220,233,255,.22)'; ctx.beginPath(); ctx.arc(W-70,80,60,0,Math.PI*2); ctx.fill();
-  ctx.strokeStyle='rgba(255,255,255,.18)'; ctx.lineWidth=3;
+  ctx.fillStyle='rgba(255,255,255,.16)';
   for(let i=0;i<5;i++){ const px=((frame*0.4+i*120)%(W+120))-60, py=150+(i%3)*70;
-    ctx.beginPath(); ctx.arc(px,py,11,0.5,Math.PI*2-0.5); ctx.stroke(); }
+    baseLogo(px,py,13); ctx.fill(); }
   ctx.strokeStyle='rgba(255,255,255,.12)'; ctx.lineWidth=2;
   for(let i=0;i<4;i++){ const yy=300+i*80+Math.sin(frame*0.03+i)*4; ctx.beginPath(); ctx.moveTo(0,yy); ctx.lineTo(W,yy); ctx.stroke(); }
 }
