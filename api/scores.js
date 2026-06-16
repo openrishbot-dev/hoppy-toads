@@ -22,8 +22,10 @@ const RATE_WINDOW = 60; // seconds
 let redis = null;
 function getRedis() {
   if (redis) return redis;
-  const url = process.env.UPSTASH_REDIS_REST_URL;
-  const token = process.env.UPSTASH_REDIS_REST_TOKEN;
+  // Accept either the native Upstash names or the KV_* names that Vercel's Upstash
+  // marketplace integration injects. Use the read-write token (not the read-only one).
+  const url = process.env.UPSTASH_REDIS_REST_URL || process.env.KV_REST_API_URL;
+  const token = process.env.UPSTASH_REDIS_REST_TOKEN || process.env.KV_REST_API_TOKEN;
   if (!url || !token) return null; // not configured -> caller responds 503, client degrades
   redis = new Redis({ url, token });
   return redis;
