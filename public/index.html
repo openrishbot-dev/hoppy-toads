@@ -149,7 +149,7 @@ let dailyMode = false;
 // ---------- STATE ----------
 let toad, pipes, items, flakes, pops, score, frame=0, state='ready';
 let speed=BASE_SPEED, gap=BASE_GAP;
-let mult=1, multT=0, shields=0, flash=0, banner="", bannerT=0;
+let mult=1, taboshiTimers=[], shields=0, flash=0, banner="", bannerT=0;
 let combo=0, comboT=0, comboBestRun=0;
 let relicsThisRun={taboshi:0,patience:0,sato:0};
 let runAch=new Set();
@@ -167,7 +167,7 @@ function reset(){
   pipes=[]; items=[]; flakes=[]; pops=[];
   score=0; frame=0; state='ready';
   speed=BASE_SPEED; gap=BASE_GAP;
-  mult=1; multT=0; shields=0; flash=0; banner=""; bannerT=0;
+  mult=1; taboshiTimers=[]; shields=0; flash=0; banner=""; bannerT=0;
   // streak reward: bank free shields at the start of the run
   const freeSh=streakShields();
   if(freeSh>0){ shields=freeSh; bannerT=140; banner='🔥 streak gift — '+freeSh+' free shield'+(freeSh>1?'s':''); }
@@ -312,7 +312,7 @@ function drawHUD(){
   ctx.strokeText(score,W/2,90); ctx.fillText(score,W/2,90);
   ctx.font='bold 13px ui-monospace,monospace'; ctx.textAlign='left'; let bx=14,by=30;
   if(dailyMode){ ctx.fillStyle='#ffd84a'; ctx.fillText('◆ DAILY',bx,by); by+=20; }
-  if(mult>1){ ctx.fillStyle='#2ec257'; ctx.fillText('x'+mult+' YIELD '+Math.ceil(multT/60)+'s',bx,by); by+=20; }
+  if(mult>1){ ctx.fillStyle='#2ec257'; ctx.fillText('x'+mult+' YIELD '+Math.ceil(Math.min(...taboshiTimers)/60)+'s',bx,by); by+=20; }
   if(shields>0){ ctx.fillStyle='#e0552e'; ctx.fillText('PATIENCE x'+shields+' ✓',bx,by); by+=20; }
   if(combo>1){ ctx.fillStyle='#ffd84a'; ctx.fillText('COMBO x'+combo,bx,by); }
   // combo timer bar
@@ -330,7 +330,7 @@ function readyPanel(){
     const fs=streakShields();
     ctx.fillText('🔥 '+profile.streak+'-day streak'+(fs>0?'  (+'+fs+' shield'+(fs>1?'s':'')+')':''),W/2,H/2-38); }
   ctx.font='11px ui-monospace,monospace'; ctx.textAlign='left'; let lx=W/2-120, ly=H/2-12;
-  drawTaboshi(lx,ly,frame); ctx.fillStyle='#9fe0b0'; ctx.fillText('$TABOSHI  x2 yield',lx+18,ly+4);
+  drawTaboshi(lx,ly,frame); ctx.fillStyle='#9fe0b0'; ctx.fillText('$TABOSHI  +1x yield (stacks)',lx+18,ly+4);
   drawPatience(lx,ly+26,frame); ctx.fillStyle='#f0a08c'; ctx.fillText('$PATIENCE  shield (rare, bank 3)',lx+18,ly+30);
   drawSato(lx,ly+52,frame); ctx.fillStyle='#bcd4ff'; ctx.fillText('SATO  gold flakes',lx+18,ly+56);
   ctx.textAlign='center'; ctx.fillStyle='#7fb0ff'; ctx.font='11px ui-monospace,monospace';
@@ -364,7 +364,11 @@ function addCombo(){ combo++; comboT=COMBO_WINDOW; if(combo>comboBestRun) comboB
 // ---------- UPDATE ----------
 function update(){
   frame++;
-  if(multT>0){ multT--; if(multT===0) mult=1; }
+  if(taboshiTimers.length){
+    for(let i=0;i<taboshiTimers.length;i++) taboshiTimers[i]--;
+    taboshiTimers=taboshiTimers.filter(t=>t>0);
+    mult=1+taboshiTimers.length; // each active $TABOSHI stacks +1x; they decay individually
+  }
   if(flash>0) flash--; if(bannerT>0) bannerT--;
   if(comboT>0){ comboT--; if(comboT===0) combo=0; }
   for(const p of pops){ p.y-=0.6; p.life--; }
@@ -391,7 +395,7 @@ function update(){
         if(dx*dx+dy*dy<(toad.r+16)*(toad.r+16)){ it.got=true; addCombo();
           relicsThisRun[it.type]++;
           const cb=combo>=2?combo:0;
-          if(it.type==='taboshi'){ mult=2; multT=420; chime(523); banner="$TABOSHI — yield x2"; bannerT=110; }
+          if(it.type==='taboshi'){ taboshiTimers.push(420); mult=1+taboshiTimers.length; chime(523); banner="$TABOSHI — yield x"+mult; bannerT=110; }
           else if(it.type==='patience'){
             if(shields<MAX_SHIELDS){ shields++; banner="$PATIENCE — shield banked ("+shields+"/"+MAX_SHIELDS+")"; }
             else { score+=5; banner="$PATIENCE — banks full, +5"; }

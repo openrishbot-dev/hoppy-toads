@@ -10,7 +10,9 @@ backend, and it degrades gracefully (if the API is down the game still plays; th
 
 - Tap / click / spacebar to **hop**. Synthesized audio — no asset files.
 - Three Tobyworld relic power-ups:
-  - **$TABOSHI** (green leaf) → yield x2 score for ~7s.
+  - **$TABOSHI** (green leaf) → **+1x score yield for ~7s, and it stacks** — grab another leaf
+    before the first expires to compound the multiplier (x2 → x3 → x4 …). Each leaf keeps its own
+    timer, so the multiplier steps back down one notch as each one runs out.
   - **$PATIENCE** (red triangle) → bankable shield, stacks to 3, absorbs one pillar hit each. Scarce.
   - **Sato** (blue swirl) → bursts collectible gold flakes (+2 each).
 - Combo chains, difficulty ramp, 8 achievements, **daily challenge** (press `D` on the start
