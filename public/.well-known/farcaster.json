@@ -8,7 +8,7 @@
     "version": "1",
     "name": "Hoppy Toads",
     "subtitle": "Hop through Tobyworld on Base",
-    "description": "A Flappy-style arcade game themed around Tobyworld on Base. Hop Toby past Base-blue pillars, grab $TABOSHI, $PATIENCE and Sato relics, build combos, and climb the global leaderboard. Patience, toby.",
+    "description": "A Flappy-style arcade game set in Tobyworld on Base, hop Toby past Base-blue pillars, grab relics, build combos, and climb the global leaderboard",
     "iconUrl": "https://hoppy-toads.vercel.app/icon.png",
     "homeUrl": "https://hoppy-toads.vercel.app/",
     "imageUrl": "https://hoppy-toads.vercel.app/hero.png",
