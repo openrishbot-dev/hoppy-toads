@@ -584,5 +584,14 @@ window.addEventListener('keydown',e=>{
 // boot
 loadProfile().then(()=>{ reset(); loop(); });
 </script>
+<!-- Farcaster / Base Mini App: dismiss the host splash screen once the game has booted.
+     Loaded as a separate module so the standalone game is unaffected — it no-ops in a normal
+     browser and if the SDK can't be fetched (e.g. offline). -->
+<script type="module">
+  try {
+    const { sdk } = await import('https://esm.sh/@farcaster/miniapp-sdk');
+    await sdk.actions.ready();
+  } catch (e) { /* not inside a Mini App host, or offline — ignore */ }
+</script>
 </body>
 </html>
