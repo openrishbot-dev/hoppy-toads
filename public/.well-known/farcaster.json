@@ -4,11 +4,14 @@
     "payload": "eyJkb21haW4iOiJob3BweS10b2Fkcy52ZXJjZWwuYXBwIn0",
     "signature": "hhq1k3C+rXVWYnbWGjMp+ese9Br+BAAur+v7KMvzlIME29ZH2aoCRN/VnHI8627512g9owgjz9BZtYdTPuHkcRw="
   },
+  "baseBuilder": {
+    "allowedAddresses": ["0x830b497262f71dcb240b3991375ea6da8e521e00"]
+  },
   "miniapp": {
     "version": "1",
     "name": "Hoppy Toads",
     "subtitle": "Hop through Tobyworld on Base",
-    "description": "A Flappy-style arcade game set in Tobyworld on Base, hop Toby past Base-blue pillars, grab relics, build combos, and climb the global leaderboard",
+    "description": "Hop Toby across Base in this one-tap arcade hopper. Grab TABOSHI, PATIENCE and SATO relics, chain combos, and climb the global leaderboard. One more hop!",
     "iconUrl": "https://hoppy-toads.vercel.app/icon.png",
     "homeUrl": "https://hoppy-toads.vercel.app/",
     "imageUrl": "https://hoppy-toads.vercel.app/hero.png",
@@ -16,6 +19,40 @@
     "splashImageUrl": "https://hoppy-toads.vercel.app/splash.png",
     "splashBackgroundColor": "#001a4d",
     "primaryCategory": "games",
-    "tags": ["base", "farcaster", "game", "tobyworld"]
+    "tags": ["base", "tobyworld", "arcade", "game", "toby"],
+    "tagline": "Hop. Dodge. Collect.",
+    "heroImageUrl": "https://hoppy-toads.vercel.app/thumbnail.png",
+    "ogTitle": "Hoppy Toads",
+    "ogDescription": "One-tap arcade hopper in Tobyworld — grab relics, chain combos, top the leaderboard.",
+    "ogImageUrl": "https://hoppy-toads.vercel.app/thumbnail.png",
+    "screenshotUrls": [
+      "https://hoppy-toads.vercel.app/screenshots/1-title.png",
+      "https://hoppy-toads.vercel.app/screenshots/2-play.png",
+      "https://hoppy-toads.vercel.app/screenshots/3-board.png"
+    ]
+  },
+  "frame": {
+    "version": "1",
+    "name": "Hoppy Toads",
+    "subtitle": "Hop through Tobyworld on Base",
+    "description": "Hop Toby across Base in this one-tap arcade hopper. Grab TABOSHI, PATIENCE and SATO relics, chain combos, and climb the global leaderboard. One more hop!",
+    "iconUrl": "https://hoppy-toads.vercel.app/icon.png",
+    "homeUrl": "https://hoppy-toads.vercel.app/",
+    "imageUrl": "https://hoppy-toads.vercel.app/hero.png",
+    "buttonTitle": "Launch Hoppy Toads",
+    "splashImageUrl": "https://hoppy-toads.vercel.app/splash.png",
+    "splashBackgroundColor": "#001a4d",
+    "primaryCategory": "games",
+    "tags": ["base", "tobyworld", "arcade", "game", "toby"],
+    "tagline": "Hop. Dodge. Collect.",
+    "heroImageUrl": "https://hoppy-toads.vercel.app/thumbnail.png",
+    "ogTitle": "Hoppy Toads",
+    "ogDescription": "One-tap arcade hopper in Tobyworld — grab relics, chain combos, top the leaderboard.",
+    "ogImageUrl": "https://hoppy-toads.vercel.app/thumbnail.png",
+    "screenshotUrls": [
+      "https://hoppy-toads.vercel.app/screenshots/1-title.png",
+      "https://hoppy-toads.vercel.app/screenshots/2-play.png",
+      "https://hoppy-toads.vercel.app/screenshots/3-board.png"
+    ]
   }
 }
