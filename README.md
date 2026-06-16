@@ -96,8 +96,9 @@ Short version:
 6. Register on [base.dev](https://www.base.dev); preview in the
    [Farcaster preview tool](https://farcaster.xyz/~/developers/mini-apps/preview).
 
-## Placeholder art
+## Art
 
-`public/icon.png` (1024×1024, no alpha), `splash.png` (1024×1024), and `hero.png` (1200×630) are
-generated placeholders. Replace them with real artwork (`node scripts/gen-placeholder-art.mjs`
+`hero.png` (1200×800, 3:2) is the custom promo image used for the mini-app preview and the
+shared-link embed. `public/icon.png` (1024×1024, no alpha) and `splash.png` (1024×1024) are still
+generated placeholders — replace them with real artwork (`node scripts/gen-placeholder-art.mjs`
 regenerates the placeholders). Embeds are cached when first scraped, so finalize art before sharing.
