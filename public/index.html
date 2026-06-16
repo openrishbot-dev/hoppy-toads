@@ -5,10 +5,17 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>Hoppy Toads — Tobyworld on Base</title>
 <meta name="description" content="Hop Toby through Tobyworld on Base. Grab relics, build combos, climb the leaderboard.">
-<!-- Open Graph / embed image -->
+<!-- Open Graph / embed image (URLs use the https://hoppy-toads.vercel.app token rewritten by set-domain). -->
 <meta property="og:title" content="Hoppy Toads — Tobyworld on Base">
 <meta property="og:description" content="A Flappy-style arcade game themed around Tobyworld on Base.">
 <meta property="og:image" content="https://hoppy-toads.vercel.app/hero.png">
+<meta property="og:url" content="https://hoppy-toads.vercel.app/">
+<meta property="og:type" content="website">
+<!-- Twitter / X card (required for X to render the large image preview) -->
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Hoppy Toads — Tobyworld on Base">
+<meta name="twitter:description" content="A Flappy-style arcade game themed around Tobyworld on Base.">
+<meta name="twitter:image" content="https://hoppy-toads.vercel.app/hero.png">
 <!-- Farcaster Mini App embed (preferred). The `https://hoppy-toads.vercel.app` token is rewritten by
      `npm run set-domain -- https://your-domain` after deploy. -->
 <meta name="fc:miniapp" content='{"version":"1","imageUrl":"https://hoppy-toads.vercel.app/hero.png","button":{"title":"Launch Hoppy Toads","action":{"type":"launch_miniapp","name":"Hoppy Toads","url":"https://hoppy-toads.vercel.app/","splashImageUrl":"https://hoppy-toads.vercel.app/splash.png","splashBackgroundColor":"#001a4d"}}}'>
@@ -94,8 +101,7 @@
       <div class="sub" id="endSub">Score 0 · Best 0</div>
       <div id="newHigh" class="status" style="display:none;color:#2ec257;">★ New personal best! ★</div>
       <div class="row" id="nameRow">
-        <input id="nameInput" maxlength="14" placeholder="your toad name" autocomplete="off">
-        <button id="submitScore">Submit</button>
+        <input id="nameInput" maxlength="14" placeholder="your toad name — press enter" autocomplete="off">
       </div>
       <div class="status" id="lbStatus">loading leaderboard…</div>
       <ol class="lb" id="lbList"></ol>
@@ -104,7 +110,7 @@
         <button class="ghost" id="shareScore">Share</button>
         <button class="ghost" id="viewBoard">Board</button>
       </div>
-      <div class="note">Global board — names &amp; scores you submit are visible to all players of this game.</div>
+      <div class="note">Your best score auto-submits to the global board — visible to all players.</div>
     </div>
   </div>
   <!-- Standalone leaderboard view -->
@@ -141,19 +147,33 @@ window.addEventListener('resize', fit); fit();
 // ---------- AUDIO ----------
 let AC=null;
 function audio(){ if(!AC) AC=new (window.AudioContext||window.webkitAudioContext)(); if(AC.state==='suspended') AC.resume(); return AC; }
-function ribbit(){ const a=audio(),t=a.currentTime;
-  [[0,260,360],[0.10,300,430]].forEach(([off,f0,f1])=>{ const o=a.createOscillator(),g=a.createGain();
-    o.type='triangle'; o.frequency.setValueAtTime(f0,t+off); o.frequency.exponentialRampToValueAtTime(f1,t+off+0.07);
-    g.gain.setValueAtTime(0.0001,t+off); g.gain.exponentialRampToValueAtTime(0.25,t+off+0.015);
-    g.gain.exponentialRampToValueAtTime(0.0001,t+off+0.13);
-    o.connect(g).connect(a.destination); o.start(t+off); o.stop(t+off+0.15); }); }
-function croak(){ const a=audio(),t=a.currentTime; const o=a.createOscillator(),g=a.createGain();
-  o.type='sawtooth'; o.frequency.setValueAtTime(180,t); o.frequency.exponentialRampToValueAtTime(60,t+0.45);
-  const lfo=a.createOscillator(),lg=a.createGain(); lfo.frequency.value=18; lg.gain.value=30;
-  lfo.connect(lg).connect(o.frequency); lfo.start(t); lfo.stop(t+0.5);
-  g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(0.35,t+0.03);
-  g.gain.exponentialRampToValueAtTime(0.0001,t+0.5);
-  o.connect(g).connect(a.destination); o.start(t); o.stop(t+0.5); }
+// A throaty frog "voice": a buzzy oscillator through a resonant bandpass (the vocal sac),
+// shaped by a fast amplitude trill (the rolling "rrr"). One call = one syllable.
+function frogVoice(t,dur,f0,f1,o){
+  o=o||{}; const a=audio();
+  const osc=a.createOscillator(); osc.type=o.type||'sawtooth';
+  osc.frequency.setValueAtTime(f0,t); osc.frequency.exponentialRampToValueAtTime(Math.max(25,f1),t+dur);
+  const bp=a.createBiquadFilter(); bp.type='bandpass'; bp.Q.value=o.Q||7;
+  bp.frequency.setValueAtTime(o.formant||700,t);
+  bp.frequency.exponentialRampToValueAtTime(o.formantEnd||o.formant||700,t+dur);
+  const trem=a.createGain(); trem.gain.setValueAtTime(0.5,t);     // tremolo midpoint
+  const lfo=a.createOscillator(); lfo.type=o.lfoType||'square'; lfo.frequency.value=o.trill||40;
+  const ld=a.createGain(); ld.gain.value=0.5; lfo.connect(ld).connect(trem.gain); // swings 0..1 → buzz
+  const env=a.createGain(); env.gain.setValueAtTime(0.0001,t);
+  env.gain.exponentialRampToValueAtTime(o.peak||0.28,t+(o.attack||0.02));
+  env.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+  osc.connect(bp).connect(trem).connect(env).connect(a.destination);
+  osc.start(t); osc.stop(t+dur+0.02); lfo.start(t); lfo.stop(t+dur+0.02);
+}
+// Hop: a quick, bright two-syllable "rib-BIT" that ticks upward.
+// (peaks are pre-filter; the resonant bandpass cuts ~5x, so these are makeup-gained.)
+function ribbit(){ const t=audio().currentTime;
+  frogVoice(t,       0.07, 230,200, {formant:600,  formantEnd:720,  trill:46, Q:7, peak:1.3});
+  frogVoice(t+0.085, 0.11, 300,400, {formant:850,  formantEnd:1150, trill:52, Q:8, peak:1.5}); }
+// Lose: a deep, gravelly, descending croak with a slow throaty roll.
+function croak(){ const t=audio().currentTime;
+  frogVoice(t,       0.5,  210,55,  {formant:520, formantEnd:300, trill:27, Q:9, peak:2.7, attack:0.03});
+  frogVoice(t+0.18,  0.34, 150,45,  {formant:380, formantEnd:240, trill:22, Q:9, peak:1.8}); }
 function chime(base){ const a=audio(),t=a.currentTime;
   [0,0.08,0.16].forEach((off,i)=>{ const o=a.createOscillator(),g=a.createGain();
     o.type='sine'; o.frequency.value=base*(1+i*0.26);
@@ -638,6 +658,7 @@ async function showGameOver(){
   scoreSubmitted=false;
   ovEnd.classList.add('show');
   await renderEndBoard();
+  await autoSubmitScore();   // best score auto-submits; server keeps your highest
 }
 async function renderEndBoard(){
   lbStatus.textContent='loading leaderboard…';
@@ -660,11 +681,22 @@ function renderRows(el, rows){
 }
 function escapeHtml(s){ return (s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
-document.getElementById('submitScore').onclick=async()=>{
+// Auto-submit the run's score. The server keeps only your best (GT zadd), so a worse run
+// never lowers your standing — we can safely fire this on every game over.
+async function autoSubmitScore(){
+  if(scoreSubmitted || !(score>0)) return;
+  const nm=(profile.name||'').trim();
+  if(!nm){ lbStatus.textContent = Identity.identity ? 'pick a username above to join the board'
+                                                    : 'type a name above to join the board ↵'; return; }
+  const ok=await submitToLeaderboard(nm, score, dailyMode?'daily':'all');
+  if(ok){ scoreSubmitted=true; chime(700); await renderEndBoard();
+    lbStatus.textContent = (score>0 && score>=profile.best) ? '✓ new best on the board!' : '✓ score on the board';
+  } else { lbStatus.textContent="couldn't reach the board — retries next run"; }
+}
+// Commit a typed name (Enter / blur). Claims it to the wallet if needed, then auto-submits.
+async function commitName(){
   let nm=(nameInput.value||'').trim().slice(0,14);
-  if(!nm){ nameInput.focus(); nameInput.placeholder='enter a name first'; return; }
-  // Wallet-connected players without a saved username: bind this name to their wallet now,
-  // so it follows them on every future session and device.
+  if(!nm) return;
   if(Identity.identity && Identity.needsName && !Identity.claimed){
     const cleaned=cleanName(nm);
     if(!cleaned){ lbStatus.textContent='use letters or numbers for your name'; nameInput.focus(); return; }
@@ -679,24 +711,30 @@ document.getElementById('submitScore').onclick=async()=>{
     document.getElementById('idVerified').textContent='✓';
     chime(660);
   }
-  profile.name=nm; await saveProfile();
-  if(!scoreSubmitted && score>0){
-    const ok=await submitToLeaderboard(nm, score, dailyMode?'daily':'all');
-    if(ok){ scoreSubmitted=true; chime(700); await renderEndBoard(); }
-    else { lbStatus.textContent="couldn't save score — tap Submit to retry"; }
-    return;
-  }
-  await renderEndBoard();
-};
+  profile.name = Identity.claimed ? Identity.name : nm;
+  await saveProfile();
+  if(!scoreSubmitted) await autoSubmitScore();         // first-run name entry -> submit now
+  else lbStatus.textContent='name saved for your next run';  // token already spent this run
+}
+nameInput.addEventListener('keydown', e=>{ if(e.key==='Enter'){ e.preventDefault(); commitName(); } });
+nameInput.addEventListener('change', ()=>{ commitName(); });   // fires on blur after an edit
+
 document.getElementById('shareScore').onclick=async()=>{
   const btn=document.getElementById('shareScore');
+  const url='https://hoppy-toads.vercel.app';
   const tag=dailyMode?' (daily)':'';
   const text='I scored '+score+' on Hoppy Toads 🐸 — Tobyworld on Base'+tag+'. patience, toby.';
+  // Inside a Farcaster/Base host: open the native cast composer with the link embedded
+  // so the mini-app card renders. (composeCast embeds the URL -> rich preview.)
+  if(miniSdk && miniSdk.actions && miniSdk.actions.composeCast){
+    try{ await miniSdk.actions.composeCast({ text, embeds:[url] }); return; }catch(e){ /* fall through */ }
+  }
+  // Native share sheet — pass url separately so X/Farcaster compose with a real link (card unfurls).
   try{
-    if(navigator.share){ await navigator.share({title:'Hoppy Toads', text}); return; }
+    if(navigator.share){ await navigator.share({title:'Hoppy Toads', text, url}); return; }
   }catch(e){ /* user cancelled or unsupported */ }
   try{
-    await navigator.clipboard.writeText(text);
+    await navigator.clipboard.writeText(text+' '+url);
     const old=btn.textContent; btn.textContent='Copied!'; setTimeout(()=>btn.textContent=old,1400);
   }catch(e){
     const old=btn.textContent; btn.textContent='Copy failed'; setTimeout(()=>btn.textContent=old,1400);
@@ -754,6 +792,7 @@ async function startRun(){
 // prefill + lock the leaderboard name to the username and attach the wallet address (or fid) as
 // `identity`. Outside a host this all no-ops and the typed-name flow is used.
 const Identity = { name:null, identity:null, verified:false, claimed:false, needsName:false };
+let miniSdk=null;   // Farcaster/Base mini-app SDK handle (for composeCast sharing)
 function applyIdentity(user, locked){
   const clean=cleanName(Identity.name||'');
   if(nameInput){
@@ -776,6 +815,7 @@ async function initMiniApp(){
     const mod=await import('https://esm.sh/@farcaster/miniapp-sdk');
     const sdk=mod.sdk||(mod.default&&mod.default.sdk)||mod.default;
     if(!sdk||!sdk.actions) return;
+    miniSdk=sdk;                                   // expose for composeCast sharing
     try{ await sdk.actions.ready(); }catch(e){}   // dismiss the host splash screen
     let ctx=null;
     try{ ctx=await Promise.race([sdk.context, new Promise(r=>setTimeout(()=>r(null),3000))]); }catch(e){}
