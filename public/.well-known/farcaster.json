@@ -1,0 +1,21 @@
+{
+  "accountAssociation": {
+    "header": "",
+    "payload": "",
+    "signature": ""
+  },
+  "miniapp": {
+    "version": "1",
+    "name": "Hoppy Toads",
+    "subtitle": "Hop through Tobyworld on Base",
+    "description": "A Flappy-style arcade game themed around Tobyworld on Base. Hop Toby past Base-blue pillars, grab $TABOSHI, $PATIENCE and Sato relics, build combos, and climb the global leaderboard. Patience, toby.",
+    "iconUrl": "https://APP_URL/icon.png",
+    "homeUrl": "https://APP_URL/",
+    "imageUrl": "https://APP_URL/hero.png",
+    "buttonTitle": "Launch Hoppy Toads",
+    "splashImageUrl": "https://APP_URL/splash.png",
+    "splashBackgroundColor": "#001a4d",
+    "primaryCategory": "games",
+    "tags": ["base", "farcaster", "game", "tobyworld"]
+  }
+}

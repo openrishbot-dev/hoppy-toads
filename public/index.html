@@ -1,0 +1,582 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Hoppy Toads — Tobyworld on Base</title>
+<meta name="description" content="Hop Toby through Tobyworld on Base. Grab relics, build combos, climb the leaderboard.">
+<!-- Open Graph / embed image -->
+<meta property="og:title" content="Hoppy Toads — Tobyworld on Base">
+<meta property="og:description" content="A Flappy-style arcade game themed around Tobyworld on Base.">
+<meta property="og:image" content="https://APP_URL/hero.png">
+<!-- Farcaster Mini App embed (preferred). The `https://APP_URL` token is rewritten by
+     `npm run set-domain -- https://your-domain` after deploy. -->
+<meta name="fc:miniapp" content='{"version":"1","imageUrl":"https://APP_URL/hero.png","button":{"title":"Launch Hoppy Toads","action":{"type":"launch_miniapp","name":"Hoppy Toads","url":"https://APP_URL/","splashImageUrl":"https://APP_URL/splash.png","splashBackgroundColor":"#001a4d"}}}'>
+<!-- Backward-compat fallback for older clients -->
+<meta name="fc:frame" content='{"version":"1","imageUrl":"https://APP_URL/hero.png","button":{"title":"Launch Hoppy Toads","action":{"type":"launch_frame","name":"Hoppy Toads","url":"https://APP_URL/","splashImageUrl":"https://APP_URL/splash.png","splashBackgroundColor":"#001a4d"}}}'>
+<link rel="icon" href="/icon.png">
+<link rel="manifest" href="/.well-known/farcaster.json">
+<style>
+  *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  html,body{height:100%;background:#001a4d;overflow:hidden;font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;}
+  #wrap{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;
+    background:radial-gradient(120% 90% at 50% 0%, #1f64ff 0%, #0033a6 65%, #001a4d 100%);}
+  #stage{position:relative;}
+  canvas{display:block;touch-action:none;box-shadow:0 24px 60px rgba(0,0,0,.55);border-radius:14px;max-width:100%;max-height:100%;}
+  /* HTML overlay for name entry + leaderboard (sharper than canvas text) */
+  .overlay{position:absolute;inset:0;display:none;align-items:center;justify-content:center;
+    border-radius:14px;background:rgba(0,18,46,.78);backdrop-filter:blur(3px);padding:18px;}
+  .overlay.show{display:flex;}
+  .card{width:100%;max-width:300px;background:#04173f;border:2px solid #1f64ff;border-radius:16px;
+    padding:18px 16px;color:#eef4ff;box-shadow:0 12px 40px rgba(0,0,0,.5);}
+  .card h2{font-size:18px;color:#7fb0ff;text-align:center;margin-bottom:4px;letter-spacing:.04em;}
+  .card .sub{font-size:11px;color:#9fb6e6;text-align:center;margin-bottom:14px;}
+  .lb{list-style:none;font-size:13px;max-height:230px;overflow:auto;margin:4px 0 12px;}
+  .lb li{display:flex;justify-content:space-between;gap:8px;padding:6px 8px;border-radius:8px;}
+  .lb li:nth-child(odd){background:rgba(31,100,255,.10);}
+  .lb li.me{background:rgba(46,194,87,.22);border:1px solid #2ec257;}
+  .lb .rk{color:#7fb0ff;width:26px;}
+  .lb .nm{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .lb .sc{color:#ffd84a;font-weight:bold;}
+  .row{display:flex;gap:8px;}
+  input{flex:1;background:#021231;border:1.5px solid #2f7bff;border-radius:10px;color:#eef4ff;
+    padding:10px 12px;font-family:inherit;font-size:14px;outline:none;}
+  input:focus{border-color:#7fb0ff;}
+  button{background:#0052FF;color:#fff;border:none;border-radius:10px;padding:10px 14px;
+    font-family:inherit;font-size:13px;font-weight:bold;cursor:pointer;letter-spacing:.04em;}
+  button.ghost{background:transparent;border:1.5px solid #2f7bff;color:#9fb6e6;}
+  button:active{transform:translateY(1px);}
+  .btns{display:flex;gap:8px;margin-top:12px;}
+  .btns button{flex:1;}
+  .note{font-size:10px;color:#6f86b8;text-align:center;margin-top:10px;line-height:1.4;}
+  .status{font-size:11px;color:#9fb6e6;text-align:center;margin:6px 0;}
+  #hint{position:fixed;bottom:14px;left:0;right:0;text-align:center;color:#bcd4ff;font-size:12px;
+    letter-spacing:.12em;text-transform:uppercase;opacity:.7;pointer-events:none;}
+</style>
+</head>
+<body>
+<div id="wrap"><div id="stage">
+  <canvas id="game"></canvas>
+  <!-- Name / game-over overlay -->
+  <div id="ovEnd" class="overlay">
+    <div class="card">
+      <h2 id="endTitle">REKT!</h2>
+      <div class="sub" id="endSub">Score 0 · Best 0</div>
+      <div id="newHigh" class="status" style="display:none;color:#2ec257;">★ New personal best! ★</div>
+      <div class="row" id="nameRow">
+        <input id="nameInput" maxlength="14" placeholder="your toad name" autocomplete="off">
+        <button id="submitScore">Submit</button>
+      </div>
+      <div class="status" id="lbStatus">loading leaderboard…</div>
+      <ol class="lb" id="lbList"></ol>
+      <div class="btns">
+        <button id="playAgain">Hop again</button>
+        <button class="ghost" id="shareScore">Share</button>
+        <button class="ghost" id="viewBoard">Board</button>
+      </div>
+      <div class="note">Global board — names &amp; scores you submit are visible to all players of this game.</div>
+    </div>
+  </div>
+  <!-- Standalone leaderboard view -->
+  <div id="ovBoard" class="overlay">
+    <div class="card">
+      <h2>🏆 Global Top Toads</h2>
+      <div class="sub" id="boardSub">all-time</div>
+      <ol class="lb" id="boardList"></ol>
+      <div class="btns"><button id="closeBoard">Back</button></div>
+      <div class="note">Daily challenge resets at midnight UTC.</div>
+    </div>
+  </div>
+</div></div>
+<div id="hint">tap · click · space to hop — patience, toby</div>
+<script>
+const cv = document.getElementById('game');
+const ctx = cv.getContext('2d');
+const W = 400, H = 640;
+cv.width = W; cv.height = H;
+function fit(){
+  const pad = 20, aw = window.innerWidth - pad, ah = window.innerHeight - pad;
+  const scale = Math.min(aw / W, ah / H);
+  cv.style.width = (W*scale)+'px'; cv.style.height = (H*scale)+'px';
+  document.getElementById('stage').style.width = (W*scale)+'px';
+  document.getElementById('stage').style.height = (H*scale)+'px';
+}
+window.addEventListener('resize', fit); fit();
+
+// ---------- AUDIO ----------
+let AC=null;
+function audio(){ if(!AC) AC=new (window.AudioContext||window.webkitAudioContext)(); if(AC.state==='suspended') AC.resume(); return AC; }
+function ribbit(){ const a=audio(),t=a.currentTime;
+  [[0,260,360],[0.10,300,430]].forEach(([off,f0,f1])=>{ const o=a.createOscillator(),g=a.createGain();
+    o.type='triangle'; o.frequency.setValueAtTime(f0,t+off); o.frequency.exponentialRampToValueAtTime(f1,t+off+0.07);
+    g.gain.setValueAtTime(0.0001,t+off); g.gain.exponentialRampToValueAtTime(0.25,t+off+0.015);
+    g.gain.exponentialRampToValueAtTime(0.0001,t+off+0.13);
+    o.connect(g).connect(a.destination); o.start(t+off); o.stop(t+off+0.15); }); }
+function croak(){ const a=audio(),t=a.currentTime; const o=a.createOscillator(),g=a.createGain();
+  o.type='sawtooth'; o.frequency.setValueAtTime(180,t); o.frequency.exponentialRampToValueAtTime(60,t+0.45);
+  const lfo=a.createOscillator(),lg=a.createGain(); lfo.frequency.value=18; lg.gain.value=30;
+  lfo.connect(lg).connect(o.frequency); lfo.start(t); lfo.stop(t+0.5);
+  g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(0.35,t+0.03);
+  g.gain.exponentialRampToValueAtTime(0.0001,t+0.5);
+  o.connect(g).connect(a.destination); o.start(t); o.stop(t+0.5); }
+function chime(base){ const a=audio(),t=a.currentTime;
+  [0,0.08,0.16].forEach((off,i)=>{ const o=a.createOscillator(),g=a.createGain();
+    o.type='sine'; o.frequency.value=base*(1+i*0.26);
+    g.gain.setValueAtTime(0.0001,t+off); g.gain.exponentialRampToValueAtTime(0.2,t+off+0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001,t+off+0.2);
+    o.connect(g).connect(a.destination); o.start(t+off); o.stop(t+off+0.22); }); }
+function fanfare(){ const a=audio(),t=a.currentTime; [523,659,784,1047].forEach((f,i)=>{
+    const o=a.createOscillator(),g=a.createGain(); o.type='triangle'; o.frequency.value=f;
+    const off=i*0.09; g.gain.setValueAtTime(0.0001,t+off); g.gain.exponentialRampToValueAtTime(0.22,t+off+0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001,t+off+0.25);
+    o.connect(g).connect(a.destination); o.start(t+off); o.stop(t+off+0.28); }); }
+
+// ---------- CONSTANTS ----------
+const GRAV=0.45, FLAP=-7.4, MAXFALL=11;
+const PIPE_W=64, GROUND_H=70;
+const BASE_SPEED=2.4, MAX_SPEED=4.4;       // difficulty ramp ceiling
+const BASE_GAP=178, MIN_GAP=140;
+const MAX_SHIELDS=3;
+const COMBO_WINDOW=240;                      // frames to keep a relic chain alive
+
+// ---------- DAILY SEED ----------
+function utcDayKey(){ const d=new Date(); return d.getUTCFullYear()+'-'+(d.getUTCMonth()+1)+'-'+d.getUTCDate(); }
+function seedFromString(str){ let h=2166136261; for(let i=0;i<str.length;i++){ h^=str.charCodeAt(i); h=Math.imul(h,16777619);} return h>>>0; }
+function mulberry32(a){ return function(){ a|=0; a=a+0x6D2B79F5|0; let t=Math.imul(a^a>>>15,1|a); t=t+Math.imul(t^t>>>7,61|t)^t; return ((t^t>>>14)>>>0)/4294967296; }; }
+let rng = Math.random;            // free play uses true random
+let dailyMode = false;
+
+// ---------- STATE ----------
+let toad, pipes, items, flakes, pops, score, frame=0, state='ready';
+let speed=BASE_SPEED, gap=BASE_GAP;
+let mult=1, multT=0, shields=0, flash=0, banner="", bannerT=0;
+let combo=0, comboT=0, comboBestRun=0;
+let relicsThisRun={taboshi:0,patience:0,sato:0};
+let runAch=new Set();
+const lore=["patience","still water","wgmi","toby smiles","slow is fast","based"];
+let loreTxt="";
+
+// persistent profile
+let profile = { name:"", best:0, dailyBest:{}, streak:0, lastDay:"", totalRuns:0, achievements:[] };
+// streak reward: 3+ days -> 1 free shield, 7+ -> 2, 14+ -> 3
+function streakShields(){ const st=profile.streak||0; if(st>=14) return 3; if(st>=7) return 2; if(st>=3) return 1; return 0; }
+
+function reset(){
+  rng = dailyMode ? mulberry32(seedFromString('toby-'+utcDayKey())) : Math.random;
+  toad={x:110,y:H/2,vy:0,r:19,rot:0};
+  pipes=[]; items=[]; flakes=[]; pops=[];
+  score=0; frame=0; state='ready';
+  speed=BASE_SPEED; gap=BASE_GAP;
+  mult=1; multT=0; shields=0; flash=0; banner=""; bannerT=0;
+  // streak reward: bank free shields at the start of the run
+  const freeSh=streakShields();
+  if(freeSh>0){ shields=freeSh; bannerT=140; banner='🔥 streak gift — '+freeSh+' free shield'+(freeSh>1?'s':''); }
+  combo=0; comboT=0; comboBestRun=0;
+  relicsThisRun={taboshi:0,patience:0,sato:0}; runAch=new Set();
+  let x=W+180; for(let i=0;i<3;i++){ addPipe(x); x+=240; }
+}
+let nextPipeX=0;
+function addPipe(x){
+  const margin=70;
+  const top=margin + rng()*(H-GROUND_H-gap-margin*2);
+  pipes.push({x,top,gap,passed:false,sway:rng()*Math.PI*2});
+  if(rng()<0.55){
+    const r=rng();
+    const ty = r<0.10 ? 'patience' : (r<0.55 ? 'taboshi' : 'sato');
+    items.push({x:x+PIPE_W+120, y:top+gap/2+(rng()*40-20), type:ty, got:false, bob:rng()*7, spin:0});
+  }
+}
+
+function flap(){
+  if(state==='ready'){ state='play'; }
+  if(state==='play'){ toad.vy=FLAP; ribbit(); }
+  // (dead state handled by overlay buttons now)
+}
+function onPress(e){
+  if(state==='dead') return;            // overlay buttons take over
+  audio(); flap();
+}
+['mousedown','touchstart','keydown'].forEach(ev=>{
+  cv.addEventListener(ev, e=>{
+    if(ev==='keydown' && e.code!=='Space') return;
+    if(ev==='touchstart') e.preventDefault();
+    onPress(e);
+  }, {passive:false});
+});
+// space works globally too
+window.addEventListener('keydown',e=>{ if(e.code==='Space' && state!=='dead'){ audio(); flap(); }});
+
+// ---------- DRAW: pillars, toby, relics (unchanged visuals) ----------
+function pillar(x,y,w,h,isTop){
+  ctx.save(); ctx.translate(x,y);
+  const g=ctx.createLinearGradient(0,0,w,0);
+  g.addColorStop(0,'#0040cc'); g.addColorStop(.45,'#1f64ff'); g.addColorStop(1,'#0033a6');
+  ctx.fillStyle=g; ctx.strokeStyle='#001a4d'; ctx.lineWidth=3;
+  ctx.beginPath(); ctx.roundRect(0,0,w,h,8); ctx.fill(); ctx.stroke();
+  ctx.fillStyle='rgba(255,255,255,.18)'; ctx.beginPath(); ctx.roundRect(7,6,9,h-12,5); ctx.fill();
+  const capY=isTop?h-20:0; ctx.fillStyle='#1f64ff'; ctx.strokeStyle='#001a4d';
+  ctx.beginPath(); ctx.roundRect(-8,capY,w+16,22,9); ctx.fill(); ctx.stroke();
+  ctx.strokeStyle='rgba(255,255,255,.85)'; ctx.lineWidth=3.5;
+  ctx.beginPath(); ctx.arc(w/2,capY+11,6.5,0.5,Math.PI*2-0.5); ctx.stroke();
+  ctx.restore();
+}
+function drawToad(){
+  const {x,y,r,rot}=toad;
+  ctx.save(); ctx.translate(x,y); ctx.rotate(rot); ctx.scale(r/19,r/19);
+  ctx.lineJoin='round'; const OUT='#06122e';
+  for(let si=0; si<shields; si++){ ctx.strokeStyle='rgba(224,85,46,'+(0.9-si*0.18)+')'; ctx.lineWidth=2.5;
+    ctx.beginPath(); ctx.arc(0,2,32+si*4,0,Math.PI*2); ctx.stroke(); }
+  if(mult>1){ ctx.strokeStyle='rgba(46,194,87,.85)'; ctx.lineWidth=2; ctx.setLineDash([4,4]);
+    ctx.beginPath(); ctx.arc(0,2,36,frame*0.05,frame*0.05+Math.PI*1.6); ctx.stroke(); ctx.setLineDash([]); }
+  ctx.fillStyle='rgba(0,0,0,.18)'; ctx.beginPath(); ctx.ellipse(2,22,22,7,0,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle='#2f7bff'; ctx.strokeStyle=OUT; ctx.lineWidth=4;
+  ctx.beginPath(); ctx.moveTo(-20,-14); ctx.lineTo(-12,-30); ctx.lineTo(-3,-16); ctx.closePath(); ctx.fill(); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(20,-14); ctx.lineTo(12,-30); ctx.lineTo(3,-16); ctx.closePath(); ctx.fill(); ctx.stroke();
+  const bg=ctx.createLinearGradient(-24,-20,24,24);
+  bg.addColorStop(0,'#7fb0ff'); bg.addColorStop(.5,'#2f7bff'); bg.addColorStop(1,'#0a52e6');
+  ctx.fillStyle=bg; ctx.strokeStyle=OUT; ctx.lineWidth=4;
+  ctx.beginPath(); ctx.ellipse(0,2,25,22,0,0,Math.PI*2); ctx.fill(); ctx.stroke();
+  ctx.fillStyle='#2f7bff';
+  for(const fx of [-13,-2,13]){ ctx.beginPath(); ctx.ellipse(fx,22,5.5,4,0,0,Math.PI*2); ctx.fill(); ctx.stroke(); }
+  ctx.fillStyle='#eef4ff'; ctx.beginPath(); ctx.ellipse(2,8,17,15,0,0,Math.PI*2); ctx.fill();
+  for(const ex of [-10,11]){
+    ctx.fillStyle='#06122e'; ctx.beginPath(); ctx.ellipse(ex,-6,8.5,9.5,0,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(ex+2.5,-9,3.2,0,Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(ex-2,-2,1.6,0,Math.PI*2); ctx.fill();
+  }
+  ctx.strokeStyle='#06122e'; ctx.lineWidth=3; ctx.lineCap='round';
+  ctx.beginPath(); ctx.moveTo(-7,6); ctx.quadraticCurveTo(-2,11,2,6); ctx.quadraticCurveTo(6,11,9,6); ctx.stroke();
+  ctx.restore();
+}
+function drawTaboshi(cx,cy,sp){ ctx.save(); ctx.translate(cx,cy); ctx.rotate(Math.sin(sp*0.04)*0.15);
+  const g=ctx.createLinearGradient(-13,-16,13,16); g.addColorStop(0,'#5fd07a'); g.addColorStop(1,'#1f9e3f');
+  ctx.fillStyle=g; ctx.strokeStyle='#0c6b25'; ctx.lineWidth=2.5;
+  ctx.beginPath(); ctx.moveTo(0,-17); ctx.bezierCurveTo(14,-12,15,8,0,17); ctx.bezierCurveTo(-15,8,-14,-12,0,-17); ctx.closePath(); ctx.fill(); ctx.stroke();
+  ctx.strokeStyle='rgba(11,107,37,.7)'; ctx.lineWidth=2; ctx.beginPath(); ctx.moveTo(0,-15); ctx.lineTo(0,15); ctx.stroke();
+  ctx.strokeStyle='rgba(180,255,190,.45)'; ctx.lineWidth=1;
+  ctx.beginPath(); for(let i=0;i<6;i++){const a=i/6*Math.PI*2; const px=Math.cos(a)*6,py=Math.sin(a)*6; i?ctx.lineTo(px-4,py):ctx.moveTo(px-4,py);} ctx.closePath(); ctx.stroke();
+  ctx.fillStyle='#0c6b25'; ctx.beginPath(); ctx.ellipse(-4,2,3,2.4,0,0,Math.PI*2); ctx.fill();
+  ctx.strokeStyle='#0c6b25'; ctx.lineWidth=2; ctx.beginPath(); ctx.moveTo(4,3); ctx.lineTo(9,3); ctx.stroke(); ctx.restore(); }
+function drawPatience(cx,cy,sp){ ctx.save(); ctx.translate(cx,cy); ctx.rotate(sp*0.02);
+  const g=ctx.createLinearGradient(0,-16,0,16); g.addColorStop(0,'#e0552e'); g.addColorStop(1,'#9c1f10');
+  ctx.fillStyle=g; ctx.strokeStyle='#5e1106'; ctx.lineWidth=2;
+  ctx.beginPath(); ctx.moveTo(0,-16); ctx.lineTo(15,12); ctx.lineTo(-15,12); ctx.closePath(); ctx.fill(); ctx.stroke();
+  ctx.fillStyle='#001a4d'; ctx.beginPath(); ctx.moveTo(0,-2); ctx.lineTo(8,11); ctx.lineTo(-8,11); ctx.closePath(); ctx.fill(); ctx.restore(); }
+function drawSato(cx,cy,sp){ ctx.save(); ctx.translate(cx,cy); ctx.rotate(sp*0.06);
+  const g=ctx.createRadialGradient(0,0,2,0,0,16); g.addColorStop(0,'#eaf3ff'); g.addColorStop(.5,'#2f7bff'); g.addColorStop(1,'#0a2a7a');
+  ctx.fillStyle=g; ctx.beginPath(); ctx.arc(0,0,16,0,Math.PI*2); ctx.fill();
+  ctx.strokeStyle='#eaf3ff'; ctx.lineWidth=2.4; ctx.lineCap='round';
+  ctx.beginPath(); for(let a=0;a<Math.PI*3.4;a+=0.2){const rr=2+a*1.7; ctx.lineTo(Math.cos(a)*rr,Math.sin(a)*rr);} ctx.stroke();
+  ctx.strokeStyle='rgba(10,42,122,.9)'; ctx.lineWidth=1.5; ctx.beginPath(); ctx.arc(0,0,16,0,Math.PI*2); ctx.stroke(); ctx.restore(); }
+function drawItem(it){
+  const y=it.y+Math.sin(frame*0.05+it.bob)*5; it.spin++;
+  ctx.save(); ctx.globalAlpha=0.35;
+  ctx.fillStyle=it.type==='taboshi'?'#5fd07a':it.type==='patience'?'#e0552e':'#7fb0ff';
+  ctx.beginPath(); ctx.arc(it.x,y,22,0,Math.PI*2); ctx.fill(); ctx.restore();
+  if(it.type==='taboshi') drawTaboshi(it.x,y,it.spin);
+  else if(it.type==='patience') drawPatience(it.x,y,it.spin);
+  else drawSato(it.x,y,it.spin);
+}
+function spawnFlakes(x,y,n){ for(let i=0;i<n;i++){ const a=rng()*Math.PI*2, sp=1.5+rng()*3;
+    flakes.push({x,y,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp-1,life:60,collect:false}); } }
+function popText(x,y,txt,color){ pops.push({x,y,txt,color,life:50}); }
+
+// ---------- BACKGROUND / HUD ----------
+function drawBackground(){
+  const g=ctx.createLinearGradient(0,0,0,H);
+  g.addColorStop(0,'#bcd4ff'); g.addColorStop(.5,'#3d7bff'); g.addColorStop(1,'#0033a6');
+  ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
+  ctx.fillStyle='rgba(220,233,255,.55)'; ctx.beginPath(); ctx.arc(W-70,80,42,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle='rgba(220,233,255,.22)'; ctx.beginPath(); ctx.arc(W-70,80,60,0,Math.PI*2); ctx.fill();
+  ctx.strokeStyle='rgba(255,255,255,.18)'; ctx.lineWidth=3;
+  for(let i=0;i<5;i++){ const px=((frame*0.4+i*120)%(W+120))-60, py=150+(i%3)*70;
+    ctx.beginPath(); ctx.arc(px,py,11,0.5,Math.PI*2-0.5); ctx.stroke(); }
+  ctx.strokeStyle='rgba(255,255,255,.12)'; ctx.lineWidth=2;
+  for(let i=0;i<4;i++){ const yy=300+i*80+Math.sin(frame*0.03+i)*4; ctx.beginPath(); ctx.moveTo(0,yy); ctx.lineTo(W,yy); ctx.stroke(); }
+}
+function drawGround(){
+  const y=H-GROUND_H; ctx.fillStyle='#0033a6'; ctx.fillRect(0,y,W,GROUND_H);
+  ctx.fillStyle='#1f64ff';
+  for(let i=0;i<W;i+=14){ const off=(frame*speed)%28; ctx.fillRect(i-off,y,7,8); }
+  ctx.fillStyle='rgba(255,255,255,.10)'; ctx.fillRect(0,y,W,4);
+  ctx.fillStyle='rgba(0,0,0,.2)'; ctx.fillRect(0,H-10,W,10);
+}
+function baseWatermark(){ ctx.save(); ctx.globalAlpha=0.8; ctx.translate(W-58,H-30);
+  ctx.fillStyle='#0052FF'; ctx.beginPath(); ctx.arc(0,0,9,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle='#eef4ff'; ctx.fillRect(-3,-1.6,7,3.2);
+  ctx.fillStyle='rgba(238,244,255,.85)'; ctx.font='bold 12px ui-monospace,monospace'; ctx.textAlign='left';
+  ctx.fillText('BASE',14,4); ctx.restore(); }
+function drawHUD(){
+  ctx.fillStyle='#06122e'; ctx.strokeStyle='#eef4ff'; ctx.lineWidth=5;
+  ctx.font='bold 52px ui-monospace,monospace'; ctx.textAlign='center';
+  ctx.strokeText(score,W/2,90); ctx.fillText(score,W/2,90);
+  ctx.font='bold 13px ui-monospace,monospace'; ctx.textAlign='left'; let bx=14,by=30;
+  if(dailyMode){ ctx.fillStyle='#ffd84a'; ctx.fillText('◆ DAILY',bx,by); by+=20; }
+  if(mult>1){ ctx.fillStyle='#2ec257'; ctx.fillText('x'+mult+' YIELD '+Math.ceil(multT/60)+'s',bx,by); by+=20; }
+  if(shields>0){ ctx.fillStyle='#e0552e'; ctx.fillText('PATIENCE x'+shields+' ✓',bx,by); by+=20; }
+  if(combo>1){ ctx.fillStyle='#ffd84a'; ctx.fillText('COMBO x'+combo,bx,by); }
+  // combo timer bar
+  if(combo>1){ const w=70*(comboT/COMBO_WINDOW); ctx.fillStyle='rgba(255,216,74,.3)'; ctx.fillRect(bx,by+6,70,4);
+    ctx.fillStyle='#ffd84a'; ctx.fillRect(bx,by+6,w,4); }
+}
+function readyPanel(){
+  ctx.fillStyle='rgba(0,26,77,.82)'; ctx.beginPath(); ctx.roundRect(W/2-160,H/2-130,320,250,18); ctx.fill();
+  ctx.strokeStyle='#1f64ff'; ctx.lineWidth=3; ctx.beginPath(); ctx.roundRect(W/2-160,H/2-130,320,250,18); ctx.stroke();
+  ctx.textAlign='center';
+  ctx.fillStyle='#7fb0ff'; ctx.font='bold 28px ui-monospace,monospace'; ctx.fillText('HOPPY TOADS',W/2,H/2-86);
+  ctx.fillStyle='#eef4ff'; ctx.font='13px ui-monospace,monospace';
+  ctx.fillText(dailyMode?'DAILY CHALLENGE — same course for all':'Tap to hop Toby across Base',W/2,H/2-58);
+  if(profile.streak>0){ ctx.fillStyle='#ffd84a';
+    const fs=streakShields();
+    ctx.fillText('🔥 '+profile.streak+'-day streak'+(fs>0?'  (+'+fs+' shield'+(fs>1?'s':'')+')':''),W/2,H/2-38); }
+  ctx.font='11px ui-monospace,monospace'; ctx.textAlign='left'; let lx=W/2-120, ly=H/2-12;
+  drawTaboshi(lx,ly,frame); ctx.fillStyle='#9fe0b0'; ctx.fillText('$TABOSHI  x2 yield',lx+18,ly+4);
+  drawPatience(lx,ly+26,frame); ctx.fillStyle='#f0a08c'; ctx.fillText('$PATIENCE  shield (rare, bank 3)',lx+18,ly+30);
+  drawSato(lx,ly+52,frame); ctx.fillStyle='#bcd4ff'; ctx.fillText('SATO  gold flakes',lx+18,ly+56);
+  ctx.textAlign='center'; ctx.fillStyle='#7fb0ff'; ctx.font='11px ui-monospace,monospace';
+  ctx.fillText('chain relics fast for COMBO bonuses',W/2,H/2+86);
+  ctx.fillStyle='#9fb6e6'; ctx.fillText('press D to toggle Daily',W/2,H/2+104);
+}
+
+// ---------- ACHIEVEMENTS ----------
+const ACH=[
+  {id:'first_flap', name:'First Hop', test:()=>score>=1},
+  {id:'score10', name:'Pondhopper (10)', test:()=>score>=10},
+  {id:'score25', name:'Lilywalker (25)', test:()=>score>=25},
+  {id:'score50', name:'Based Toad (50)', test:()=>score>=50},
+  {id:'combo5', name:'Relic Chain x5', test:()=>combo>=5},
+  {id:'triforce', name:'Trinity (all 3 relics)', test:()=>relicsThisRun.taboshi&&relicsThisRun.patience&&relicsThisRun.sato},
+  {id:'fullbank', name:'Patience Maxed (3 shields)', test:()=>shields>=3},
+  {id:'flakehoard', name:'Gold Hoarder', test:()=>relicsThisRun.sato>=3},
+];
+function checkAchievements(){
+  for(const a of ACH){
+    if(!runAch.has(a.id) && !profile.achievements.includes(a.id) && a.test()){
+      runAch.add(a.id); profile.achievements.push(a.id);
+      popText(toad.x+30, toad.y-30, '🏅 '+a.name, '#ffd84a'); chime(880);
+    }
+  }
+}
+
+// ---------- COMBO ----------
+function addCombo(){ combo++; comboT=COMBO_WINDOW; if(combo>comboBestRun) comboBestRun=combo; }
+
+// ---------- UPDATE ----------
+function update(){
+  frame++;
+  if(multT>0){ multT--; if(multT===0) mult=1; }
+  if(flash>0) flash--; if(bannerT>0) bannerT--;
+  if(comboT>0){ comboT--; if(comboT===0) combo=0; }
+  for(const p of pops){ p.y-=0.6; p.life--; }
+  pops=pops.filter(p=>p.life>0);
+
+  if(state==='play'){
+    // difficulty ramp by score
+    speed=Math.min(MAX_SPEED, BASE_SPEED + score*0.02);
+    gap=Math.max(MIN_GAP, BASE_GAP - score*0.4);
+
+    toad.vy=Math.min(toad.vy+GRAV,MAXFALL); toad.y+=toad.vy;
+    toad.rot=Math.max(-0.5,Math.min(1.4,toad.vy*0.07));
+    for(const p of pipes){
+      p.x-=speed;
+      if(!p.passed && p.x+PIPE_W<toad.x){ p.passed=true; const g=mult; score+=g;
+        if(score%5<g) loreTxt=lore[Math.floor(rng()*lore.length)];
+        if(score>profile.best) profile.best=score; }
+    }
+    if(pipes.length && pipes[0].x<-PIPE_W){ pipes.shift();
+      addPipe(pipes[pipes.length-1].x + 230); }
+    for(const it of items){
+      it.x-=speed;
+      if(!it.got){ const dy=toad.y-it.y, dx=toad.x-it.x;
+        if(dx*dx+dy*dy<(toad.r+16)*(toad.r+16)){ it.got=true; addCombo();
+          relicsThisRun[it.type]++;
+          const cb=combo>=2?combo:0;
+          if(it.type==='taboshi'){ mult=2; multT=420; chime(523); banner="$TABOSHI — yield x2"; bannerT=110; }
+          else if(it.type==='patience'){
+            if(shields<MAX_SHIELDS){ shields++; banner="$PATIENCE — shield banked ("+shields+"/"+MAX_SHIELDS+")"; }
+            else { score+=5; banner="$PATIENCE — banks full, +5"; }
+            chime(392); bannerT=110; }
+          else { spawnFlakes(it.x,it.y,16); chime(659); banner="SATO — gold flakes!"; bannerT=110; }
+          if(cb){ const bonus=cb*2; score+=bonus; popText(it.x,it.y-20,'COMBO x'+cb+' +'+bonus,'#ffd84a'); }
+          checkAchievements();
+        }
+      }
+    }
+    items=items.filter(it=>it.x>-40 && !it.got);
+    for(const f of flakes){ f.vy+=0.18; f.x+=f.vx-speed*0.3; f.y+=f.vy; f.life--;
+      if(f.life>40){ const dx=toad.x-f.x, dy=toad.y-f.y;
+        if(dx*dx+dy*dy<(toad.r+8)*(toad.r+8)){ f.collect=true; score+=2; } } }
+    flakes=flakes.filter(f=>f.life>0 && !f.collect);
+
+    const r=toad.r-4;
+    for(const p of pipes){
+      if(toad.x+r>p.x && toad.x-r<p.x+PIPE_W){
+        if(toad.y-r<p.top || toad.y+r>p.top+p.gap){
+          if(shields>0){ shields--; flash=12; toad.vy=FLAP*0.7; p.passed=true; chime(300);
+            banner="patience held — survived! ("+shields+" left)"; bannerT=90; toad.x=p.x-r-2; }
+          else die(); }
+      }
+    }
+    if(toad.y+toad.r>H-GROUND_H){ toad.y=H-GROUND_H-toad.r; die(); }
+    if(toad.y-toad.r<0){ toad.y=toad.r; toad.vy=0; }
+    checkAchievements();
+  } else if(state==='ready'){ toad.y=H/2+Math.sin(frame*0.08)*8; toad.rot=0; }
+}
+function die(){ if(state!=='play') return; state='dead'; croak();
+  if(score>profile.best) profile.best=score;
+  profile.totalRuns++;
+  // streak: count consecutive UTC days played
+  const today=utcDayKey();
+  if(profile.lastDay!==today){
+    const y=new Date(); y.setUTCDate(y.getUTCDate()-1);
+    const yk=y.getUTCFullYear()+'-'+(y.getUTCMonth()+1)+'-'+y.getUTCDate();
+    profile.streak = (profile.lastDay===yk)? profile.streak+1 : 1;
+    profile.lastDay=today;
+  }
+  if(dailyMode){ profile.dailyBest[today]=Math.max(profile.dailyBest[today]||0, score); }
+  saveProfile();
+  showGameOver();
+}
+
+// ---------- RENDER ----------
+function render(){
+  drawBackground();
+  for(const it of items) drawItem(it);
+  for(const p of pipes){ const sway=Math.sin(frame*0.02+p.sway)*1.5;
+    pillar(p.x+sway,0,PIPE_W,p.top,true);
+    pillar(p.x-sway,p.top+p.gap,PIPE_W,H-GROUND_H-(p.top+p.gap),false); }
+  for(const f of flakes){ ctx.globalAlpha=Math.min(1,f.life/30);
+    ctx.fillStyle=f.life%6<3?'#ffd84a':'#ffb300'; ctx.beginPath(); ctx.arc(f.x,f.y,2.6,0,Math.PI*2); ctx.fill(); ctx.globalAlpha=1; }
+  drawGround(); drawToad();
+  if(flash>0){ ctx.fillStyle='rgba(224,85,46,'+(flash/24)+')'; ctx.fillRect(0,0,W,H); }
+  for(const p of pops){ ctx.globalAlpha=Math.min(1,p.life/20); ctx.fillStyle=p.color;
+    ctx.font='bold 13px ui-monospace,monospace'; ctx.textAlign='center'; ctx.fillText(p.txt,p.x,p.y); ctx.globalAlpha=1; }
+  drawHUD(); baseWatermark();
+  if(bannerT>0){ ctx.globalAlpha=Math.min(1,bannerT/30);
+    ctx.fillStyle='rgba(0,26,77,.85)'; ctx.beginPath(); ctx.roundRect(W/2-130,116,260,30,8); ctx.fill();
+    ctx.fillStyle='#eef4ff'; ctx.font='bold 13px ui-monospace,monospace'; ctx.textAlign='center';
+    ctx.fillText(banner,W/2,136); ctx.globalAlpha=1; }
+  if(state==='ready') readyPanel();
+}
+function loop(){ update(); render(); requestAnimationFrame(loop); }
+
+// =================== PERSISTENCE ===================
+// Profile (personal best, streak, achievements, name) is per-device -> localStorage.
+const PROFILE_KEY='hoppytoads.profile';
+async function loadProfile(){
+  try{ const raw=localStorage.getItem(PROFILE_KEY);
+    if(raw) profile=Object.assign(profile, JSON.parse(raw));
+  }catch(e){}
+  if(profile.name){ nameInput.value=profile.name; }
+}
+async function saveProfile(){
+  try{ localStorage.setItem(PROFILE_KEY, JSON.stringify(profile)); }catch(e){}
+}
+
+// Global leaderboard -> serverless API (/api/scores) backed by Upstash Redis.
+// Must degrade gracefully: any failure returns an empty board and the game keeps playing.
+async function fetchLeaderboard(mode){ // mode: 'all' | 'daily'
+  try{
+    const res=await fetch('/api/scores?mode='+(mode==='daily'?'daily':'all'),{cache:'no-store'});
+    if(!res.ok) throw new Error('bad status '+res.status);
+    const data=await res.json();
+    const rows=Array.isArray(data.rows)?data.rows:[];
+    return rows.slice(0,20);
+  }catch(e){ return null; } // null signals "couldn't load" to the renderer
+}
+async function submitToLeaderboard(name, sc, mode){
+  // identity is reserved for a future wallet-based board; pass undefined for now.
+  try{
+    const res=await fetch('/api/scores',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({name, score:sc, mode:mode==='daily'?'daily':'all'})
+    });
+    return res.ok;
+  }catch(e){ return false; }
+}
+
+// =================== OVERLAY / DOM ===================
+const ovEnd=document.getElementById('ovEnd'), ovBoard=document.getElementById('ovBoard');
+const endTitle=document.getElementById('endTitle'), endSub=document.getElementById('endSub');
+const newHigh=document.getElementById('newHigh'), nameInput=document.getElementById('nameInput');
+const lbList=document.getElementById('lbList'), lbStatus=document.getElementById('lbStatus');
+const boardList=document.getElementById('boardList'), boardSub=document.getElementById('boardSub');
+let lastWasBest=false, scoreSubmitted=false;
+
+async function showGameOver(){
+  lastWasBest = score>0 && score>=profile.best;
+  endTitle.textContent = score>=profile.best && score>0 ? 'NEW BEST!' : 'REKT!';
+  endSub.innerHTML = 'Score <b style="color:#ffd84a">'+score+'</b> · Best '+profile.best+
+    (dailyMode?' · ◆ Daily':'') + (comboBestRun>1?' · combo x'+comboBestRun:'');
+  newHigh.style.display = lastWasBest ? 'block' : 'none';
+  if(lastWasBest) fanfare();
+  scoreSubmitted=false;
+  ovEnd.classList.add('show');
+  await renderEndBoard();
+}
+async function renderEndBoard(){
+  lbStatus.textContent='loading leaderboard…';
+  const rows=await fetchLeaderboard(dailyMode?'daily':'all');
+  renderRows(lbList, rows);
+  lbStatus.textContent = rows===null ? "couldn't load leaderboard"
+    : (dailyMode?'Daily top toads':'All-time top toads');
+}
+function renderRows(el, rows){
+  el.innerHTML='';
+  if(rows===null){ el.innerHTML='<li><span class="nm" style="color:#6f86b8">couldn’t load leaderboard — you can still play</span></li>'; return; }
+  if(!rows.length){ el.innerHTML='<li><span class="nm" style="color:#6f86b8">No scores yet — be the first!</span></li>'; return; }
+  const myName=(profile.name||'').toLowerCase();
+  rows.forEach((r,i)=>{
+    const li=document.createElement('li');
+    if(r.name && r.name.toLowerCase()===myName) li.className='me';
+    li.innerHTML='<span class="rk">'+(i+1)+'</span><span class="nm">'+escapeHtml(r.name)+'</span><span class="sc">'+r.score+'</span>';
+    el.appendChild(li);
+  });
+}
+function escapeHtml(s){ return (s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+document.getElementById('submitScore').onclick=async()=>{
+  const nm=(nameInput.value||'').trim().slice(0,14);
+  if(!nm){ nameInput.focus(); nameInput.placeholder='enter a name first'; return; }
+  profile.name=nm; await saveProfile();
+  if(!scoreSubmitted && score>0){ scoreSubmitted=true;
+    await submitToLeaderboard(nm, score, dailyMode?'daily':'all');
+    chime(700);
+  }
+  await renderEndBoard();
+};
+document.getElementById('shareScore').onclick=async()=>{
+  const btn=document.getElementById('shareScore');
+  const tag=dailyMode?' (daily)':'';
+  const text='I scored '+score+' on Hoppy Toads 🐸 — Tobyworld on Base'+tag+'. patience, toby.';
+  try{
+    if(navigator.share){ await navigator.share({title:'Hoppy Toads', text}); return; }
+  }catch(e){ /* user cancelled or unsupported */ }
+  try{
+    await navigator.clipboard.writeText(text);
+    const old=btn.textContent; btn.textContent='Copied!'; setTimeout(()=>btn.textContent=old,1400);
+  }catch(e){
+    const old=btn.textContent; btn.textContent='Copy failed'; setTimeout(()=>btn.textContent=old,1400);
+  }
+};
+document.getElementById('playAgain').onclick=()=>{ ovEnd.classList.remove('show'); reset(); };
+document.getElementById('viewBoard').onclick=async()=>{ ovEnd.classList.remove('show'); await openBoard(); };
+document.getElementById('closeBoard').onclick=()=>{ ovBoard.classList.remove('show'); ovEnd.classList.add('show'); };
+async function openBoard(){
+  ovBoard.classList.add('show'); boardSub.textContent=dailyMode?'daily ('+utcDayKey()+')':'all-time';
+  boardList.innerHTML='<li><span class="nm" style="color:#6f86b8">loading…</span></li>';
+  const rows=await fetchLeaderboard(dailyMode?'daily':'all');
+  renderRows(boardList, rows);
+}
+
+// Daily toggle (only on ready/dead)
+window.addEventListener('keydown',e=>{
+  if(e.key==='d'||e.key==='D'){ if(state==='ready'){ dailyMode=!dailyMode; reset(); } }
+});
+
+// boot
+loadProfile().then(()=>{ reset(); loop(); });
+</script>
+</body>
+</html>

@@ -1,0 +1,19 @@
+{
+  "name": "hoppy-toads",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Hoppy Toads — a Flappy-style arcade game themed around Tobyworld on Base. Farcaster / Base mini app.",
+  "scripts": {
+    "dev": "vercel dev",
+    "start": "vercel dev",
+    "serve": "node scripts/static-server.mjs",
+    "set-domain": "node scripts/set-domain.mjs"
+  },
+  "dependencies": {
+    "@upstash/redis": "^1.34.3"
+  },
+  "devDependencies": {
+    "vercel": "^39.0.0"
+  }
+}

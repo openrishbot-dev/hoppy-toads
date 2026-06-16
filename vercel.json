@@ -1,0 +1,19 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "cleanUrls": true,
+  "headers": [
+    {
+      "source": "/(hero|splash|icon).png",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, immutable, no-transform, max-age=300" }
+      ]
+    },
+    {
+      "source": "/.well-known/farcaster.json",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, immutable, no-transform, max-age=300" },
+        { "key": "Content-Type", "value": "application/json" }
+      ]
+    }
+  ]
+}
