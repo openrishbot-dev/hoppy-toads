@@ -622,6 +622,7 @@ function update(){
   } else if(state==='ready'){ toad.y=H/2+Math.sin(frame*0.08)*8; toad.rot=0; }
 }
 function die(){ if(state!=='play') return; state='dead'; croak(); buzz(70);   // long buzz on crash
+  track('end',{score});   // analytics: run ended at this score
   addShake(16); spawnSparks(toad.x,toad.y,'#7fb0ff',22);
   if(score>profile.best) profile.best=score;
   profile.totalRuns++;
@@ -861,9 +862,22 @@ window.addEventListener('keydown',e=>{
 // back so the server can verify the run is real (valid HMAC, single-use nonce, plausible duration).
 // Fully graceful: if this fetch fails, runToken stays null and the score just may not be recorded —
 // gameplay is never affected.
+// =================== ANALYTICS (privacy-friendly, fire-and-forget) ===================
+// Anonymous per-device id (for daily-unique counts only) + non-blocking event beacons.
+const CID=(()=>{ try{ let c=localStorage.getItem('hoppytoads.cid');
+  if(!c){ c=Math.random().toString(36).slice(2)+Date.now().toString(36); localStorage.setItem('hoppytoads.cid',c); }
+  return c; }catch(e){ return 'anon'; } })();
+function track(ev, extra){
+  try{ const body=JSON.stringify(Object.assign({ev, cid:CID}, extra||{}));
+    if(navigator.sendBeacon){ navigator.sendBeacon('/api/stats', new Blob([body],{type:'application/json'})); }
+    else { fetch('/api/stats',{method:'POST',headers:{'Content-Type':'application/json'},body,keepalive:true}).catch(()=>{}); }
+  }catch(e){}
+}
+
 let runToken=null;
 async function startRun(){
-  runToken=null;
+  runToken=null; track('start');   // analytics: a run began
+
   try{
     const r=await fetch('/api/scores?start=1',{cache:'no-store'});
     if(r.ok){ const d=await r.json(); runToken=d.token||null; }
@@ -1034,6 +1048,7 @@ document.getElementById('helpBtn').onclick=()=>showHow(0);
     else if(dx>40 && howIdx>0){ howIdx--; renderHow(); } },{passive:true}); })();
 
 // boot
+track('open');   // analytics: app opened (daily-unique via anonymous cid)
 initMiniApp();
 loadProfile().then(()=>{ reset(); loop();
   let seen=false; try{ seen=!!localStorage.getItem('hoppytoads.seenhow'); }catch(e){}
