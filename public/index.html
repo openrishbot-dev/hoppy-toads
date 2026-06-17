@@ -242,9 +242,16 @@ let relicsThisRun={taboshi:0,patience:0,sato:0};
 let runAch=new Set();
 // --- juice (visual only; uses Math.random so it never perturbs the daily seed) ---
 let shake=0, sparks=[], lastMilestone=0;
-function addShake(n){ shake=Math.max(shake,n); }
-function spawnSparks(x,y,color,n){ for(let i=0;i<n;i++){ const a=Math.random()*Math.PI*2, sp=1+Math.random()*3.5;
+// Respect the OS "reduce motion" setting: dial back screen-shake and particle bursts.
+let reduceMotion=false;
+try{ const mq=window.matchMedia('(prefers-reduced-motion: reduce)'); reduceMotion=mq.matches;
+  mq.addEventListener&&mq.addEventListener('change',e=>reduceMotion=e.matches); }catch(e){}
+function addShake(n){ shake=Math.max(shake, reduceMotion?Math.min(n,2):n); }
+function spawnSparks(x,y,color,n){ if(reduceMotion) n=Math.ceil(n/3);
+  for(let i=0;i<n;i++){ const a=Math.random()*Math.PI*2, sp=1+Math.random()*3.5;
   sparks.push({x,y,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp,life:24+Math.random()*16,color}); } }
+// Mobile haptics — no-op where unsupported. Accepts a duration or a vibrate pattern array.
+function buzz(p){ try{ if(navigator.vibrate) navigator.vibrate(p); }catch(e){} }
 const lore=["patience","still water","wgmi","toby smiles","slow is fast","based"];
 let loreTxt="";
 
@@ -282,7 +289,7 @@ function addPipe(x){
 
 function flap(){
   if(state==='ready'){ state='play'; startRun(); }   // request an anti-cheat run token
-  if(state==='play'){ toad.vy=FLAP; toad.sq=1; ribbit(); }
+  if(state==='play'){ toad.vy=FLAP; toad.sq=1; ribbit(); buzz(6); }   // tiny tactile tick on hop
   // (dead state handled by overlay buttons now)
 }
 function howIsOpen(){ const o=document.getElementById('ovHow'); return o && o.classList.contains('show'); }
@@ -524,7 +531,7 @@ function triggerGold(){
   score+=25;
   banner='✨ GOLDEN STREAK — 2× score! ✨'; bannerT=150;
   popText(toad.x+10, toad.y-34, 'GOLDEN! +25', '#ffd84a');
-  spawnSparks(toad.x,toad.y,'#ffd84a',28); addShake(7); fanfare();
+  spawnSparks(toad.x,toad.y,'#ffd84a',28); addShake(7); fanfare(); buzz([0,30,40,30,40,60]);
 }
 
 // ---------- UPDATE ----------
@@ -555,6 +562,9 @@ function update(){
     for(const p of pipes){
       p.x-=speed;
       if(!p.passed && p.x+PIPE_W<toad.x){ p.passed=true; const g=mult*(goldT>0?2:1); score+=g;
+        // near-miss bonus: reward threading the gap with little clearance
+        const clr=Math.min(toad.y-toad.r-p.top, (p.top+p.gap)-(toad.y+toad.r));
+        if(clr>=0 && clr<15){ score+=3; popText(toad.x+22, toad.y-26, 'SWISH! +3', '#7fd0ff'); buzz(12); }
         if(score%5<g) loreTxt=lore[Math.floor(rng()*lore.length)];
         if(score>profile.best) profile.best=score;
         if(score>=lastMilestone+25){ lastMilestone=Math.floor(score/25)*25;
@@ -565,7 +575,7 @@ function update(){
     for(const it of items){
       it.x-=speed;
       if(!it.got){ const dy=toad.y-it.y, dx=toad.x-it.x;
-        if(dx*dx+dy*dy<(toad.r+16)*(toad.r+16)){ it.got=true; addCombo();
+        if(dx*dx+dy*dy<(toad.r+16)*(toad.r+16)){ it.got=true; addCombo(); buzz([0,12,22,12]);  // double tick on relic grab
           relicsThisRun[it.type]++; comboTypes[it.type]=true;
           spawnSparks(it.x,it.y, it.type==='taboshi'?'#5fd07a':it.type==='patience'?'#e0552e':'#7fb0ff', 14);
           addShake(4);
@@ -599,7 +609,7 @@ function update(){
             // patience steadies the toad: settle it safely inside the current gap (no x drift)
             toad.y=Math.max(p.top+r+8, Math.min(p.top+p.gap-r-8, toad.y));
             toad.vy=0; toad.sq=1;
-            chime(300); addShake(9); spawnSparks(toad.x,toad.y,'#e0552e',20);
+            chime(300); addShake(9); spawnSparks(toad.x,toad.y,'#e0552e',20); buzz([0,18,30,18]);
             banner="patience held — steadied! ("+shields+" left)"; bannerT=90;
           } else { die(); }
           break;                                     // resolve one pipe per frame
@@ -611,7 +621,7 @@ function update(){
     checkAchievements();
   } else if(state==='ready'){ toad.y=H/2+Math.sin(frame*0.08)*8; toad.rot=0; }
 }
-function die(){ if(state!=='play') return; state='dead'; croak();
+function die(){ if(state!=='play') return; state='dead'; croak(); buzz(70);   // long buzz on crash
   addShake(16); spawnSparks(toad.x,toad.y,'#7fb0ff',22);
   if(score>profile.best) profile.best=score;
   profile.totalRuns++;
