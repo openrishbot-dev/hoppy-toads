@@ -5,17 +5,23 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>Hoppy Toads — Tobyworld on Base</title>
 <meta name="description" content="Hop Toby through Tobyworld on Base. Grab relics, build combos, climb the leaderboard.">
-<!-- Open Graph / embed image (URLs use the https://hoppy-toads.vercel.app token rewritten by set-domain). -->
+<!-- Open Graph / embed image (URLs use the https://hoppy-toads.vercel.app token rewritten by set-domain).
+     Mirrors the proven ToadVault/Pixel Pond recipe: ONE 1200x630 image for both og + twitter,
+     with explicit dimensions and a ?v cache-buster so X re-crawls and renders the large card. -->
 <meta property="og:title" content="Hoppy Toads — Tobyworld on Base">
 <meta property="og:description" content="A Flappy-style arcade game themed around Tobyworld on Base.">
-<meta property="og:image" content="https://hoppy-toads.vercel.app/hero.png">
 <meta property="og:url" content="https://hoppy-toads.vercel.app/">
 <meta property="og:type" content="website">
+<meta property="og:site_name" content="Hoppy Toads">
+<meta property="og:image" content="https://hoppy-toads.vercel.app/card.png?v=2">
+<meta property="og:image:type" content="image/png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
 <!-- Twitter / X card (required for X to render the large image preview) -->
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="Hoppy Toads — Tobyworld on Base">
 <meta name="twitter:description" content="A Flappy-style arcade game themed around Tobyworld on Base.">
-<meta name="twitter:image" content="https://hoppy-toads.vercel.app/card.png">
+<meta name="twitter:image" content="https://hoppy-toads.vercel.app/card.png?v=2">
 <!-- Farcaster Mini App embed (preferred). The `https://hoppy-toads.vercel.app` token is rewritten by
      `npm run set-domain -- https://your-domain` after deploy. -->
 <meta name="fc:miniapp" content='{"version":"1","imageUrl":"https://hoppy-toads.vercel.app/hero.png","button":{"title":"Launch Hoppy Toads","action":{"type":"launch_miniapp","name":"Hoppy Toads","url":"https://hoppy-toads.vercel.app/","splashImageUrl":"https://hoppy-toads.vercel.app/splash.png","splashBackgroundColor":"#001a4d"}}}'>
