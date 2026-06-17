@@ -210,7 +210,7 @@ let dailyMode = false;
 // ---------- STATE ----------
 let toad, pipes, items, flakes, pops, score, frame=0, state='ready';
 let speed=BASE_SPEED, gap=BASE_GAP;
-let mult=1, taboshiTimers=[], shields=0, flash=0, banner="", bannerT=0;
+let mult=1, taboshiTimers=[], shields=0, flash=0, inv=0, banner="", bannerT=0;
 let combo=0, comboT=0, comboBestRun=0;
 let relicsThisRun={taboshi:0,patience:0,sato:0};
 let runAch=new Set();
@@ -233,7 +233,7 @@ function reset(){
   pipes=[]; items=[]; flakes=[]; pops=[]; sparks=[]; shake=0; lastMilestone=0;
   score=0; frame=0; state='ready';
   speed=BASE_SPEED; gap=BASE_GAP;
-  mult=1; taboshiTimers=[]; shields=0; flash=0; banner=""; bannerT=0;
+  mult=1; taboshiTimers=[]; shields=0; flash=0; inv=0; banner=""; bannerT=0;
   // streak reward: bank free shields at the start of the run
   const freeSh=streakShields();
   if(freeSh>0){ shields=freeSh; bannerT=140; banner='🔥 streak gift — '+freeSh+' free shield'+(freeSh>1?'s':''); }
@@ -300,6 +300,12 @@ function drawToad(){
   ctx.save(); ctx.translate(x,y); ctx.rotate(rot); ctx.scale(r/19,r/19);
   const sq=toad.sq||0; ctx.scale(1-0.16*sq, 1+0.16*sq); // hop squash-and-stretch
   ctx.lineJoin='round'; const OUT='#06122e';
+  // patience-save invulnerability: blink the toad + show a pulsing guard ring
+  if(inv>0){
+    if(Math.floor(inv/4)%2===0) ctx.globalAlpha=0.45;
+    ctx.strokeStyle='rgba(224,85,46,'+(0.55+0.35*Math.sin(frame*0.5))+')'; ctx.lineWidth=3;
+    ctx.beginPath(); ctx.arc(0,2,40,0,Math.PI*2); ctx.stroke();
+  }
   for(let si=0; si<shields; si++){ ctx.strokeStyle='rgba(224,85,46,'+(0.9-si*0.18)+')'; ctx.lineWidth=2.5;
     ctx.beginPath(); ctx.arc(0,2,32+si*4,0,Math.PI*2); ctx.stroke(); }
   if(mult>1){ ctx.strokeStyle='rgba(46,194,87,.85)'; ctx.lineWidth=2; ctx.setLineDash([4,4]);
@@ -532,13 +538,20 @@ function update(){
     flakes=flakes.filter(f=>f.life>0 && !f.collect);
 
     const r=toad.r-4;
-    for(const p of pipes){
+    if(inv>0){ inv--; }                              // patience save: ghost through this pipe
+    else for(const p of pipes){
       if(toad.x+r>p.x && toad.x-r<p.x+PIPE_W){
         if(toad.y-r<p.top || toad.y+r>p.top+p.gap){
-          if(shields>0){ shields--; flash=12; toad.vy=FLAP*0.7; p.passed=true; chime(300);
-            banner="patience held — survived! ("+shields+" left)"; bannerT=90; toad.x=p.x-r-2;
-            addShake(9); spawnSparks(toad.x,toad.y,'#e0552e',18); }
-          else die(); }
+          if(shields>0){
+            shields--; flash=16; inv=48;             // brief invulnerability so it can't re-hit
+            // patience steadies the toad: settle it safely inside the current gap (no x drift)
+            toad.y=Math.max(p.top+r+8, Math.min(p.top+p.gap-r-8, toad.y));
+            toad.vy=0; toad.sq=1;
+            chime(300); addShake(9); spawnSparks(toad.x,toad.y,'#e0552e',20);
+            banner="patience held — steadied! ("+shields+" left)"; bannerT=90;
+          } else { die(); }
+          break;                                     // resolve one pipe per frame
+        }
       }
     }
     if(toad.y+toad.r>H-GROUND_H){ toad.y=H-GROUND_H-toad.r; die(); }
