@@ -64,6 +64,11 @@
   #helpBtn{position:absolute;bottom:8px;left:8px;width:34px;height:34px;padding:0;border-radius:10px;
     background:rgba(0,18,46,.55);border:1.5px solid rgba(127,176,255,.45);color:#cfe0ff;font-size:16px;
     line-height:1;z-index:5;backdrop-filter:blur(2px);cursor:pointer;}
+  /* Daily-mode toggle — shown on the start screen (works on touch; keyboard 'D' still works too) */
+  #dailyBtn{position:absolute;top:66%;left:50%;transform:translate(-50%,-50%);display:none;z-index:6;
+    padding:7px 16px;border-radius:999px;font:inherit;font-size:12px;letter-spacing:.04em;cursor:pointer;
+    color:#bcd4ff;background:rgba(0,18,46,.6);border:1.5px solid rgba(127,176,255,.5);backdrop-filter:blur(2px);}
+  #dailyBtn.on{color:#04173f;background:#ffd84a;border-color:#ffd84a;font-weight:bold;}
   .row{display:flex;gap:8px;}
   input{flex:1;background:#021231;border:1.5px solid #2f7bff;border-radius:10px;color:#eef4ff;
     padding:10px 12px;font-family:inherit;font-size:14px;outline:none;}
@@ -159,6 +164,7 @@
     </div>
   </div>
   <button id="helpBtn" title="How to play" aria-label="How to play">?</button>
+  <button id="dailyBtn" aria-label="Toggle daily challenge">◆ Daily: OFF</button>
 </div></div>
 <div id="hint">tap · click · space to hop — patience, toby</div>
 <script>
@@ -499,7 +505,7 @@ function readyPanel(){
   drawSato(lx,ly+52,frame); ctx.fillStyle='#bcd4ff'; ctx.fillText('SATO  gold flakes',lx+18,ly+56);
   ctx.textAlign='center'; ctx.fillStyle='#7fb0ff'; ctx.font='11px ui-monospace,monospace';
   ctx.fillText('chain relics fast for COMBO bonuses',W/2,H/2+86);
-  ctx.fillStyle='#9fb6e6'; ctx.fillText('press D to toggle Daily',W/2,H/2+104);
+  // (Daily toggle is the HTML #dailyBtn below — works on touch; 'D' key also toggles)
 }
 
 // ---------- ACHIEVEMENTS ----------
@@ -553,9 +559,12 @@ function update(){
   sparks=sparks.filter(s=>s.life>0);
 
   if(state==='play'){
-    // difficulty ramp by score
-    speed=Math.min(MAX_SPEED, BASE_SPEED + score*0.02);
-    gap=Math.max(MIN_GAP, BASE_GAP - score*0.4);
+    // difficulty ramp by score, with an onboarding grace so the first few pipes stay
+    // forgiving (that's where most first-time runs die). Mid/late difficulty is unchanged.
+    // NOTE: preliminary judgment tune — refine from the dashboard's score-bucket drop-off.
+    const ramp=Math.max(0, score-4);   // pipes 1–5 play at the easiest settings
+    speed=Math.min(MAX_SPEED, BASE_SPEED + ramp*0.022);
+    gap=Math.max(MIN_GAP, BASE_GAP - ramp*0.42);
 
     toad.vy=Math.min(toad.vy+GRAV,MAXFALL); toad.y+=toad.vy;
     toad.rot=Math.max(-0.5,Math.min(1.4,toad.vy*0.07));
@@ -664,6 +673,8 @@ function render(){
     ctx.fillText(banner,W/2,136); ctx.globalAlpha=1; }
   if(state==='ready') readyPanel();
   ctx.restore();
+  const showD = state==='ready';                       // Daily toggle only on the start screen
+  if(dailyBtn && dailyBtn._shown!==showD){ dailyBtn._shown=showD; dailyBtn.style.display=showD?'block':'none'; }
 }
 function loop(){ update(); render(); requestAnimationFrame(loop); }
 
@@ -852,10 +863,13 @@ async function loadBoard(){
 tabAll.onclick=()=>{ boardMode='all'; loadBoard(); };
 tabDaily.onclick=()=>{ boardMode='daily'; loadBoard(); };
 
-// Daily toggle (only on ready/dead)
-window.addEventListener('keydown',e=>{
-  if(e.key==='d'||e.key==='D'){ if(state==='ready'){ dailyMode=!dailyMode; reset(); } }
-});
+// Daily toggle — visible button (touch-friendly) + the 'D' keyboard shortcut.
+const dailyBtn=document.getElementById('dailyBtn');
+function syncDaily(){ dailyBtn.textContent='◆ Daily: '+(dailyMode?'ON':'OFF'); dailyBtn.classList.toggle('on',dailyMode); }
+function toggleDaily(){ if(state!=='ready') return; dailyMode=!dailyMode; reset(); syncDaily(); try{ chime(dailyMode?660:440); }catch(e){} }
+dailyBtn.addEventListener('click',e=>{ e.stopPropagation(); toggleDaily(); });
+syncDaily();
+window.addEventListener('keydown',e=>{ if(e.key==='d'||e.key==='D') toggleDaily(); });
 
 // =================== ANTI-CHEAT RUN TOKEN ===================
 // At the start of each run we ask the server for a short-lived signed token. On submit we send it
