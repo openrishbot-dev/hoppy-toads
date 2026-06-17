@@ -212,6 +212,7 @@ let toad, pipes, items, flakes, pops, score, frame=0, state='ready';
 let speed=BASE_SPEED, gap=BASE_GAP;
 let mult=1, taboshiTimers=[], shields=0, flash=0, inv=0, banner="", bannerT=0;
 let combo=0, comboT=0, comboBestRun=0;
+let goldT=0, comboTypes={taboshi:false,patience:false,sato:false};  // Golden Streak: all 3 relics in one chain
 let relicsThisRun={taboshi:0,patience:0,sato:0};
 let runAch=new Set();
 // --- juice (visual only; uses Math.random so it never perturbs the daily seed) ---
@@ -238,6 +239,7 @@ function reset(){
   const freeSh=streakShields();
   if(freeSh>0){ shields=freeSh; bannerT=140; banner='🔥 streak gift — '+freeSh+' free shield'+(freeSh>1?'s':''); }
   combo=0; comboT=0; comboBestRun=0;
+  goldT=0; comboTypes={taboshi:false,patience:false,sato:false};
   relicsThisRun={taboshi:0,patience:0,sato:0}; runAch=new Set();
   let x=W+180; for(let i=0;i<3;i++){ addPipe(x); x+=240; }
 }
@@ -300,6 +302,18 @@ function drawToad(){
   ctx.save(); ctx.translate(x,y); ctx.rotate(rot); ctx.scale(r/19,r/19);
   const sq=toad.sq||0; ctx.scale(1-0.16*sq, 1+0.16*sq); // hop squash-and-stretch
   ctx.lineJoin='round'; const OUT='#06122e';
+  // Golden Streak palette — Toby glows gold instead of blue while the frenzy is active.
+  const GOLD=goldT>0;
+  const C_LIGHT=GOLD?'#fff2b0':'#7fb0ff', C_MID=GOLD?'#ffcc33':'#2f7bff', C_DEEP=GOLD?'#d98a00':'#0a52e6';
+  if(GOLD){  // radiant aura + sunburst rays
+    ctx.save(); ctx.globalAlpha=0.85;
+    ctx.strokeStyle='rgba(255,216,74,'+(0.5+0.3*Math.sin(frame*0.3))+')'; ctx.lineWidth=3;
+    ctx.beginPath(); ctx.arc(0,2,42,0,Math.PI*2); ctx.stroke();
+    ctx.strokeStyle='rgba(255,236,140,.6)'; ctx.lineWidth=2;
+    for(let i=0;i<8;i++){ const a=frame*0.04+i*Math.PI/4, r1=44, r2=52;
+      ctx.beginPath(); ctx.moveTo(Math.cos(a)*r1,2+Math.sin(a)*r1); ctx.lineTo(Math.cos(a)*r2,2+Math.sin(a)*r2); ctx.stroke(); }
+    ctx.restore();
+  }
   // patience-save invulnerability: blink the toad + show a pulsing guard ring
   if(inv>0){
     if(Math.floor(inv/4)%2===0) ctx.globalAlpha=0.45;
@@ -311,14 +325,14 @@ function drawToad(){
   if(mult>1){ ctx.strokeStyle='rgba(46,194,87,.85)'; ctx.lineWidth=2; ctx.setLineDash([4,4]);
     ctx.beginPath(); ctx.arc(0,2,36,frame*0.05,frame*0.05+Math.PI*1.6); ctx.stroke(); ctx.setLineDash([]); }
   ctx.fillStyle='rgba(0,0,0,.18)'; ctx.beginPath(); ctx.ellipse(2,22,22,7,0,0,Math.PI*2); ctx.fill();
-  ctx.fillStyle='#2f7bff'; ctx.strokeStyle=OUT; ctx.lineWidth=4;
+  ctx.fillStyle=C_MID; ctx.strokeStyle=OUT; ctx.lineWidth=4;
   ctx.beginPath(); ctx.moveTo(-20,-14); ctx.lineTo(-12,-30); ctx.lineTo(-3,-16); ctx.closePath(); ctx.fill(); ctx.stroke();
   ctx.beginPath(); ctx.moveTo(20,-14); ctx.lineTo(12,-30); ctx.lineTo(3,-16); ctx.closePath(); ctx.fill(); ctx.stroke();
   const bg=ctx.createLinearGradient(-24,-20,24,24);
-  bg.addColorStop(0,'#7fb0ff'); bg.addColorStop(.5,'#2f7bff'); bg.addColorStop(1,'#0a52e6');
+  bg.addColorStop(0,C_LIGHT); bg.addColorStop(.5,C_MID); bg.addColorStop(1,C_DEEP);
   ctx.fillStyle=bg; ctx.strokeStyle=OUT; ctx.lineWidth=4;
   ctx.beginPath(); ctx.ellipse(0,2,25,22,0,0,Math.PI*2); ctx.fill(); ctx.stroke();
-  ctx.fillStyle='#2f7bff';
+  ctx.fillStyle=C_MID;
   for(const fx of [-13,-2,13]){ ctx.beginPath(); ctx.ellipse(fx,22,5.5,4,0,0,Math.PI*2); ctx.fill(); ctx.stroke(); }
   ctx.fillStyle='#eef4ff'; ctx.beginPath(); ctx.ellipse(2,8,17,15,0,0,Math.PI*2); ctx.fill();
   for(const ex of [-10,11]){
@@ -477,6 +491,15 @@ function checkAchievements(){
 
 // ---------- COMBO ----------
 function addCombo(){ combo++; comboT=COMBO_WINDOW; if(combo>comboBestRun) comboBestRun=combo; }
+// Golden Streak: collecting all 3 relic types in one combo chain turns Toby gold for a 2x-score frenzy.
+function triggerGold(){
+  goldT=300;                                                   // ~5s at 60fps
+  comboTypes={taboshi:false,patience:false,sato:false};        // must re-collect all 3 to re-trigger
+  score+=25;
+  banner='✨ GOLDEN STREAK — 2× score! ✨'; bannerT=150;
+  popText(toad.x+10, toad.y-34, 'GOLDEN! +25', '#ffd84a');
+  spawnSparks(toad.x,toad.y,'#ffd84a',28); addShake(7); fanfare();
+}
 
 // ---------- UPDATE ----------
 function update(){
@@ -487,7 +510,8 @@ function update(){
     mult=1+taboshiTimers.length; // each active $TABOSHI stacks +1x; they decay individually
   }
   if(flash>0) flash--; if(bannerT>0) bannerT--;
-  if(comboT>0){ comboT--; if(comboT===0) combo=0; }
+  if(comboT>0){ comboT--; if(comboT===0){ combo=0; comboTypes={taboshi:false,patience:false,sato:false}; } }
+  if(goldT>0){ goldT--; if(goldT>0 && frame%3===0) spawnSparks(toad.x-8, toad.y+4, '#ffd84a', 1); }
   for(const p of pops){ p.y-=0.6; p.life--; }
   pops=pops.filter(p=>p.life>0);
   if(shake>0) shake-=1;
@@ -504,7 +528,7 @@ function update(){
     toad.rot=Math.max(-0.5,Math.min(1.4,toad.vy*0.07));
     for(const p of pipes){
       p.x-=speed;
-      if(!p.passed && p.x+PIPE_W<toad.x){ p.passed=true; const g=mult; score+=g;
+      if(!p.passed && p.x+PIPE_W<toad.x){ p.passed=true; const g=mult*(goldT>0?2:1); score+=g;
         if(score%5<g) loreTxt=lore[Math.floor(rng()*lore.length)];
         if(score>profile.best) profile.best=score;
         if(score>=lastMilestone+25){ lastMilestone=Math.floor(score/25)*25;
@@ -516,7 +540,7 @@ function update(){
       it.x-=speed;
       if(!it.got){ const dy=toad.y-it.y, dx=toad.x-it.x;
         if(dx*dx+dy*dy<(toad.r+16)*(toad.r+16)){ it.got=true; addCombo();
-          relicsThisRun[it.type]++;
+          relicsThisRun[it.type]++; comboTypes[it.type]=true;
           spawnSparks(it.x,it.y, it.type==='taboshi'?'#5fd07a':it.type==='patience'?'#e0552e':'#7fb0ff', 14);
           addShake(4);
           const cb=combo>=2?combo:0;
@@ -527,6 +551,8 @@ function update(){
             chime(392); bannerT=110; }
           else { spawnFlakes(it.x,it.y,16); chime(659); banner="SATO — gold flakes!"; bannerT=110; }
           if(cb){ const bonus=cb*2; score+=bonus; popText(it.x,it.y-20,'COMBO x'+cb+' +'+bonus,'#ffd84a'); }
+          // Golden Streak: all 3 relic types gathered in this chain -> gold frenzy
+          if(comboTypes.taboshi && comboTypes.patience && comboTypes.sato) triggerGold();
           checkAchievements();
         }
       }
