@@ -53,6 +53,17 @@
   .lb .rk{color:#7fb0ff;width:26px;}
   .lb .nm{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
   .lb .sc{color:#ffd84a;font-weight:bold;}
+  /* How-to-play cards */
+  #ovHow{z-index:9;}
+  .howcard{text-align:center;}
+  #howArt{width:88px;height:88px;margin:2px auto 8px;display:block;}
+  .howcard #howBody{min-height:60px;font-size:12.5px;line-height:1.55;color:#cfe0ff;margin-bottom:6px;}
+  .dots{display:flex;gap:7px;justify-content:center;margin:6px 0 12px;}
+  .dot{width:7px;height:7px;border-radius:50%;background:rgba(127,176,255,.30);cursor:pointer;transition:background .2s;}
+  .dot.on{background:#7fb0ff;}
+  #helpBtn{position:absolute;bottom:8px;left:8px;width:34px;height:34px;padding:0;border-radius:10px;
+    background:rgba(0,18,46,.55);border:1.5px solid rgba(127,176,255,.45);color:#cfe0ff;font-size:16px;
+    line-height:1;z-index:5;backdrop-filter:blur(2px);cursor:pointer;}
   .row{display:flex;gap:8px;}
   input{flex:1;background:#021231;border:1.5px solid #2f7bff;border-radius:10px;color:#eef4ff;
     padding:10px 12px;font-family:inherit;font-size:14px;outline:none;}
@@ -134,11 +145,25 @@
       <div class="note">Daily challenge resets at midnight UTC.</div>
     </div>
   </div>
+  <!-- How-to-play cards (first visit + the ? button) -->
+  <div id="ovHow" class="overlay">
+    <div class="card howcard">
+      <h2 id="howTitle">How to Play</h2>
+      <canvas id="howArt" width="120" height="120"></canvas>
+      <div id="howBody" class="sub">…</div>
+      <div class="dots" id="howDots"></div>
+      <div class="btns">
+        <button class="ghost" id="howSkip">Skip</button>
+        <button id="howNext">Next</button>
+      </div>
+    </div>
+  </div>
+  <button id="helpBtn" title="How to play" aria-label="How to play">?</button>
 </div></div>
 <div id="hint">tap · click · space to hop — patience, toby</div>
 <script>
 const cv = document.getElementById('game');
-const ctx = cv.getContext('2d');
+let ctx = cv.getContext('2d');   // reassignable: card art is rendered onto a mini-canvas via ctx swap
 const W = 400, H = 640;
 cv.width = W; cv.height = H;
 function fit(){
@@ -260,8 +285,9 @@ function flap(){
   if(state==='play'){ toad.vy=FLAP; toad.sq=1; ribbit(); }
   // (dead state handled by overlay buttons now)
 }
+function howIsOpen(){ const o=document.getElementById('ovHow'); return o && o.classList.contains('show'); }
 function onPress(e){
-  if(state==='dead') return;            // overlay buttons take over
+  if(state==='dead' || howIsOpen()) return;   // overlay buttons / tutorial take over
   audio(); try{ Music.start(); }catch(_){}; flap();
 }
 ['mousedown','touchstart','keydown'].forEach(ev=>{
@@ -272,7 +298,7 @@ function onPress(e){
   }, {passive:false});
 });
 // space works globally too
-window.addEventListener('keydown',e=>{ if(e.code==='Space' && state!=='dead'){ audio(); flap(); }});
+window.addEventListener('keydown',e=>{ if(e.code==='Space' && state!=='dead' && !howIsOpen()){ audio(); flap(); }});
 
 // ---------- DRAW: pillars, toby, relics (unchanged visuals) ----------
 // Base brand mark: a solid disc with a horizontal slot notched into its left
@@ -943,9 +969,66 @@ const Music=(function(){
   return { start, toggle:togglePlay };
 })();
 
+// =================== HOW TO PLAY (first visit + ? button) ===================
+const ovHow=document.getElementById('ovHow'), howArt=document.getElementById('howArt');
+const HOW_CARDS=[
+  {k:'toad',     t:'Hop, Toby!',    b:'Tap, click, or press space to hop. Dodge the pipes and fly as far as you can.'},
+  {k:'taboshi',  t:'$TABOSHI',      b:'Yield multiplier — more points per pipe. Grab more to stack it higher (it fades over time).'},
+  {k:'patience', t:'$PATIENCE',     b:'A shield. It saves you from one crash and steadies you into the gap. Bank up to 3.'},
+  {k:'sato',     t:'SATO',          b:'Gold flakes — scoop them up as you fly for bonus points.'},
+  {k:'combo',    t:'Combos',        b:'Grab relics quickly back-to-back to chain a combo and rack up bonus points.'},
+  {k:'gold',     t:'Golden Streak', b:'Grab all THREE relics in one chain and Toby turns GOLD — 2× score for a few seconds!'},
+];
+let howIdx=0;
+// Render card art onto the mini-canvas by temporarily pointing the global ctx at it.
+function drawHowArt(kind){
+  const mc=howArt.getContext('2d'); mc.clearRect(0,0,howArt.width,howArt.height);
+  const cx=howArt.width/2, cy=howArt.height/2, saved=ctx;
+  ctx=mc;
+  try{
+    if(kind==='taboshi'||kind==='patience'||kind==='sato'){
+      ctx.save(); ctx.translate(cx,cy); ctx.scale(2.1,2.1);
+      if(kind==='taboshi') drawTaboshi(0,0,40); else if(kind==='patience') drawPatience(0,0,40); else drawSato(0,0,0);
+      ctx.restore();
+    } else if(kind==='combo'){
+      ctx.save(); ctx.translate(cx,cy); ctx.scale(1.25,1.25);
+      drawTaboshi(-24,0,30); drawPatience(0,0,30); drawSato(24,0,0); ctx.restore();
+    } else { // toad / gold -> static Toby (gold for the gold card)
+      const sT=toad,sSh=shields,sIn=inv,sG=goldT,sM=mult;
+      toad={x:cx,y:cy+4,vy:0,r:22,rot:0,sq:0}; shields=0; inv=0; goldT=(kind==='gold')?60:0; mult=1;
+      drawToad();
+      toad=sT; shields=sSh; inv=sIn; goldT=sG; mult=sM;
+    }
+  }catch(e){}
+  ctx=saved;   // always restore the main game context
+}
+function renderHow(){
+  const c=HOW_CARDS[howIdx];
+  document.getElementById('howTitle').textContent=c.t;
+  document.getElementById('howBody').textContent=c.b;
+  drawHowArt(c.k);
+  document.getElementById('howNext').textContent = howIdx===HOW_CARDS.length-1 ? 'Got it — hop!' : 'Next';
+  const dots=document.getElementById('howDots'); dots.innerHTML='';
+  HOW_CARDS.forEach((_,i)=>{ const d=document.createElement('div'); d.className='dot'+(i===howIdx?' on':'');
+    d.onclick=()=>{ howIdx=i; renderHow(); }; dots.appendChild(d); });
+}
+function showHow(i){ howIdx=i||0; ovHow.classList.add('show'); renderHow(); }
+function closeHow(){ ovHow.classList.remove('show'); try{ localStorage.setItem('hoppytoads.seenhow','1'); }catch(e){} }
+document.getElementById('howNext').onclick=()=>{ if(howIdx<HOW_CARDS.length-1){ howIdx++; renderHow(); chime(520); } else closeHow(); };
+document.getElementById('howSkip').onclick=closeHow;
+document.getElementById('helpBtn').onclick=()=>showHow(0);
+(()=>{ let x0=null; const card=ovHow.querySelector('.card');   // swipe between cards
+  card.addEventListener('touchstart',e=>{ x0=e.touches[0].clientX; },{passive:true});
+  card.addEventListener('touchend',e=>{ if(x0==null)return; const dx=e.changedTouches[0].clientX-x0; x0=null;
+    if(dx<-40 && howIdx<HOW_CARDS.length-1){ howIdx++; renderHow(); }
+    else if(dx>40 && howIdx>0){ howIdx--; renderHow(); } },{passive:true}); })();
+
 // boot
 initMiniApp();
-loadProfile().then(()=>{ reset(); loop(); });
+loadProfile().then(()=>{ reset(); loop();
+  let seen=false; try{ seen=!!localStorage.getItem('hoppytoads.seenhow'); }catch(e){}
+  if(!seen) showHow(0);   // first visit: auto-open the how-to cards
+});
 </script>
 </body>
 </html>
