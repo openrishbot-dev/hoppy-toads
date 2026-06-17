@@ -232,11 +232,30 @@ const MAX_SHIELDS=3;
 const COMBO_WINDOW=240;                      // frames to keep a relic chain alive
 
 // ---------- DAILY SEED ----------
-function utcDayKey(){ const d=new Date(); return d.getUTCFullYear()+'-'+(d.getUTCMonth()+1)+'-'+d.getUTCDate(); }
+// Daily challenge resets at the player's LOCAL midnight. This key is the single source of
+// truth for the daily seed, the daily modifier, and the daily leaderboard bucket (sent to the
+// server, which validates it's within ±1 day of its own date to allow every timezone).
+function dayKey(){ const d=new Date(); return d.getFullYear()+'-'+(d.getMonth()+1)+'-'+d.getDate(); }
 function seedFromString(str){ let h=2166136261; for(let i=0;i<str.length;i++){ h^=str.charCodeAt(i); h=Math.imul(h,16777619);} return h>>>0; }
 function mulberry32(a){ return function(){ a|=0; a=a+0x6D2B79F5|0; let t=Math.imul(a^a>>>15,1|a); t=t+Math.imul(t^t>>>7,61|t)^t; return ((t^t>>>14)>>>0)/4294967296; }; }
 let rng = Math.random;            // free play uses true random
 let dailyMode = false;
+
+// ---------- DAILY MODIFIERS ----------
+// One modifier per day, picked deterministically from the day key so every player gets the
+// same twist. `mod` is the active modifier (null in free play). mg(key,default) reads a factor.
+const DAILY_MODS=[
+  {id:'classic', name:'Classic',     emoji:'🐸', desc:'A fair, standard run — pure skill.'},
+  {id:'windy',   name:'Windy',       emoji:'🌬️', desc:'Heavier gravity — Toby drops faster.', grav:1.32, flap:1.07},
+  {id:'tight',   name:'Tight Gaps',  emoji:'📏', desc:'Narrower gaps — thread the needle.', gapMul:0.85},
+  {id:'rush',    name:'Relic Rush',  emoji:'💎', desc:'Relics everywhere — chain those combos.', relicChance:0.92},
+  {id:'golden',  name:'Golden Hour', emoji:'✨', desc:'Double score the whole run — go big.', scoreMul:2},
+  {id:'fog',     name:'Foggy',       emoji:'🌫️', desc:'Mist ahead — less warning before pipes.', fog:true},
+  {id:'sprint',  name:'Sprint',      emoji:'🏃', desc:'Fast from the first pipe — quick reflexes.', speedMul:1.28, rampMul:1.4},
+];
+let mod=null;   // active daily modifier (set in reset)
+function pickDailyMod(){ return DAILY_MODS[seedFromString('toby-mod-'+dayKey()) % DAILY_MODS.length]; }
+function mg(k,d){ return (mod && mod[k]!=null) ? mod[k] : d; }   // modifier value or default
 
 // ---------- STATE ----------
 let toad, pipes, items, flakes, pops, score, frame=0, state='ready';
@@ -267,11 +286,12 @@ let profile = { name:"", best:0, dailyBest:{}, streak:0, lastDay:"", totalRuns:0
 function streakShields(){ const st=profile.streak||0; if(st>=14) return 3; if(st>=7) return 2; if(st>=3) return 1; return 0; }
 
 function reset(){
-  rng = dailyMode ? mulberry32(seedFromString('toby-'+utcDayKey())) : Math.random;
+  rng = dailyMode ? mulberry32(seedFromString('toby-'+dayKey())) : Math.random;
+  mod = dailyMode ? pickDailyMod() : null;        // today's modifier (same for everyone)
   toad={x:110,y:H/2,vy:0,r:19,rot:0,sq:0};
   pipes=[]; items=[]; flakes=[]; pops=[]; sparks=[]; shake=0; lastMilestone=0;
   score=0; frame=0; state='ready';
-  speed=BASE_SPEED; gap=BASE_GAP;
+  speed=BASE_SPEED*mg('speedMul',1); gap=BASE_GAP*mg('gapMul',1);
   mult=1; taboshiTimers=[]; shields=0; flash=0; inv=0; banner=""; bannerT=0;
   // streak reward: bank free shields at the start of the run
   const freeSh=streakShields();
@@ -286,7 +306,7 @@ function addPipe(x){
   const margin=70;
   const top=margin + rng()*(H-GROUND_H-gap-margin*2);
   pipes.push({x,top,gap,passed:false,sway:rng()*Math.PI*2});
-  if(rng()<0.55){
+  if(rng()<mg('relicChance',0.55)){
     const r=rng();
     const ty = r<0.10 ? 'patience' : (r<0.55 ? 'taboshi' : 'sato');
     items.push({x:x+PIPE_W+120, y:top+gap/2+(rng()*40-20), type:ty, got:false, bob:rng()*7, spin:0});
@@ -295,7 +315,7 @@ function addPipe(x){
 
 function flap(){
   if(state==='ready'){ state='play'; startRun(); }   // request an anti-cheat run token
-  if(state==='play'){ toad.vy=FLAP; toad.sq=1; ribbit(); buzz(6); }   // tiny tactile tick on hop
+  if(state==='play'){ toad.vy=FLAP*mg('flap',1); toad.sq=1; ribbit(); buzz(6); }   // tiny tactile tick on hop
   // (dead state handled by overlay buttons now)
 }
 function howIsOpen(){ const o=document.getElementById('ovHow'); return o && o.classList.contains('show'); }
@@ -481,7 +501,7 @@ function drawHUD(){
   ctx.font='bold 52px ui-monospace,monospace'; ctx.textAlign='center';
   ctx.strokeText(score,W/2,90); ctx.fillText(score,W/2,90);
   ctx.font='bold 13px ui-monospace,monospace'; ctx.textAlign='left'; let bx=14,by=30;
-  if(dailyMode){ ctx.fillStyle='#ffd84a'; ctx.fillText('◆ DAILY',bx,by); by+=20; }
+  if(dailyMode){ ctx.fillStyle='#ffd84a'; ctx.fillText((mod?mod.emoji+' ':'◆ ')+'DAILY',bx,by); by+=20; }
   if(mult>1){ ctx.fillStyle='#2ec257'; ctx.fillText('x'+mult+' YIELD '+Math.ceil(Math.min(...taboshiTimers)/60)+'s',bx,by); by+=20; }
   if(shields>0){ ctx.fillStyle='#e0552e'; ctx.fillText('PATIENCE x'+shields+' ✓',bx,by); by+=20; }
   if(combo>1){ ctx.fillStyle='#ffd84a'; ctx.fillText('COMBO x'+combo,bx,by); }
@@ -495,8 +515,11 @@ function readyPanel(){
   ctx.textAlign='center';
   ctx.fillStyle='#7fb0ff'; ctx.font='bold 28px ui-monospace,monospace'; ctx.fillText('HOPPY TOADS',W/2,H/2-86);
   ctx.fillStyle='#eef4ff'; ctx.font='13px ui-monospace,monospace';
-  ctx.fillText(dailyMode?'DAILY CHALLENGE — same course for all':'Tap to hop Toby across Base',W/2,H/2-58);
-  if(profile.streak>0){ ctx.fillStyle='#ffd84a';
+  const M=mod||DAILY_MODS[0];
+  ctx.fillText(dailyMode?(M.emoji+' '+M.name+' Challenge'):'Tap to hop Toby across Base',W/2,H/2-58);
+  if(dailyMode){ ctx.fillStyle='#9fb6e6'; ctx.font='11px ui-monospace,monospace';
+    ctx.fillText(M.desc+'  ·  same course for all',W/2,H/2-40); ctx.font='13px ui-monospace,monospace'; }
+  else if(profile.streak>0){ ctx.fillStyle='#ffd84a';
     const fs=streakShields();
     ctx.fillText('🔥 '+profile.streak+'-day streak'+(fs>0?'  (+'+fs+' shield'+(fs>1?'s':'')+')':''),W/2,H/2-38); }
   ctx.font='11px ui-monospace,monospace'; ctx.textAlign='left'; let lx=W/2-120, ly=H/2-12;
@@ -563,14 +586,15 @@ function update(){
     // forgiving (that's where most first-time runs die). Mid/late difficulty is unchanged.
     // NOTE: preliminary judgment tune — refine from the dashboard's score-bucket drop-off.
     const ramp=Math.max(0, score-4);   // pipes 1–5 play at the easiest settings
-    speed=Math.min(MAX_SPEED, BASE_SPEED + ramp*0.022);
-    gap=Math.max(MIN_GAP, BASE_GAP - ramp*0.42);
+    const sm=mg('speedMul',1), gm=mg('gapMul',1);   // daily-modifier factors
+    speed=Math.min(MAX_SPEED*sm, BASE_SPEED*sm + ramp*0.022*mg('rampMul',1));
+    gap=Math.max(MIN_GAP*gm, BASE_GAP*gm - ramp*0.42);
 
-    toad.vy=Math.min(toad.vy+GRAV,MAXFALL); toad.y+=toad.vy;
+    toad.vy=Math.min(toad.vy+GRAV*mg('grav',1),MAXFALL); toad.y+=toad.vy;
     toad.rot=Math.max(-0.5,Math.min(1.4,toad.vy*0.07));
     for(const p of pipes){
       p.x-=speed;
-      if(!p.passed && p.x+PIPE_W<toad.x){ p.passed=true; const g=mult*(goldT>0?2:1); score+=g;
+      if(!p.passed && p.x+PIPE_W<toad.x){ p.passed=true; const g=mult*(goldT>0?2:1)*mg('scoreMul',1); score+=g;
         // near-miss bonus: reward threading the gap with little clearance
         const clr=Math.min(toad.y-toad.r-p.top, (p.top+p.gap)-(toad.y+toad.r));
         if(clr>=0 && clr<15){ score+=3; popText(toad.x+22, toad.y-26, 'SWISH! +3', '#7fd0ff'); buzz(12); }
@@ -636,7 +660,7 @@ function die(){ if(state!=='play') return; state='dead'; croak(); buzz(70);   //
   if(score>profile.best) profile.best=score;
   profile.totalRuns++;
   // streak: count consecutive UTC days played
-  const today=utcDayKey();
+  const today=dayKey();
   if(profile.lastDay!==today){
     const y=new Date(); y.setUTCDate(y.getUTCDate()-1);
     const yk=y.getUTCFullYear()+'-'+(y.getUTCMonth()+1)+'-'+y.getUTCDate();
@@ -660,6 +684,10 @@ function render(){
   for(const f of flakes){ ctx.globalAlpha=Math.min(1,f.life/30);
     ctx.fillStyle=f.life%6<3?'#ffd84a':'#ffb300'; ctx.beginPath(); ctx.arc(f.x,f.y,2.6,0,Math.PI*2); ctx.fill(); ctx.globalAlpha=1; }
   drawGround(); drawToad();
+  // Foggy modifier: mist ahead of Toby so pipes give less warning (transparent near him).
+  if(mg('fog')){ const fx=toad.x+50, fgr=ctx.createLinearGradient(fx,0,W,0);
+    fgr.addColorStop(0,'rgba(196,216,255,0)'); fgr.addColorStop(1,'rgba(206,224,255,.85)');
+    ctx.fillStyle=fgr; ctx.fillRect(fx,0,W-fx,H-GROUND_H); }
   for(const s of sparks){ ctx.globalAlpha=Math.min(1,s.life/24); ctx.fillStyle=s.color;
     ctx.beginPath(); ctx.arc(s.x,s.y,2.4,0,Math.PI*2); ctx.fill(); }
   ctx.globalAlpha=1;
@@ -695,7 +723,7 @@ async function saveProfile(){
 // Must degrade gracefully: any failure returns an empty board and the game keeps playing.
 async function fetchLeaderboard(mode){ // mode: 'all' | 'daily'
   try{
-    const res=await fetch('/api/scores?mode='+(mode==='daily'?'daily':'all'),{cache:'no-store'});
+    const res=await fetch('/api/scores?mode='+(mode==='daily'?'daily':'all')+(mode==='daily'?'&day='+encodeURIComponent(dayKey()):''),{cache:'no-store'});
     if(!res.ok) throw new Error('bad status '+res.status);
     const data=await res.json();
     const rows=Array.isArray(data.rows)?data.rows:[];
@@ -709,7 +737,7 @@ async function submitToLeaderboard(name, sc, mode){
     const res=await fetch('/api/scores',{
       method:'POST',
       headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({name, score:sc, mode:mode==='daily'?'daily':'all',
+      body:JSON.stringify({name, score:sc, mode:mode==='daily'?'daily':'all', day:dayKey(),
         identity:Identity.identity||undefined, token:runToken||undefined})
     });
     return res.ok;
@@ -745,7 +773,7 @@ async function showGameOver(){
   lastWasBest = score>0 && score>=profile.best;
   endTitle.textContent = score>=profile.best && score>0 ? 'NEW BEST!' : 'REKT!';
   endSub.innerHTML = 'Score <b style="color:#ffd84a">'+score+'</b> · Best '+profile.best+
-    (dailyMode?' · ◆ Daily':'') + (comboBestRun>1?' · combo x'+comboBestRun:'');
+    (dailyMode&&mod?(' · '+mod.emoji+' '+mod.name):'') + (comboBestRun>1?' · combo x'+comboBestRun:'');
   newHigh.style.display = lastWasBest ? 'block' : 'none';
   if(lastWasBest) fanfare();
   scoreSubmitted=false;
@@ -849,7 +877,7 @@ async function openBoard(){
 }
 async function loadBoard(){
   syncTabs();
-  boardSub.textContent=boardMode==='daily'?'daily ('+utcDayKey()+')':'all-time';
+  boardSub.textContent=boardMode==='daily'?'daily ('+dayKey()+')':'all-time';
   boardList.innerHTML='<li><span class="nm" style="color:#6f86b8">loading…</span></li>';
   myRank.textContent='';
   const rows=await fetchLeaderboard(boardMode);
@@ -1017,6 +1045,7 @@ const HOW_CARDS=[
   {k:'sato',     t:'SATO',          b:'Gold flakes — scoop them up as you fly for bonus points.'},
   {k:'combo',    t:'Combos',        b:'Grab relics quickly back-to-back to chain a combo and rack up bonus points.'},
   {k:'gold',     t:'Golden Streak', b:'Grab all THREE relics in one chain and Toby turns GOLD — 2× score for a few seconds!'},
+  {k:'daily',    t:'Daily Challenge', b:'Tap ◆ Daily on the start screen for one shared course + a daily twist (Windy, Foggy, Golden Hour…). New each day at your local midnight; own leaderboard.'},
 ];
 let howIdx=0;
 // Render card art onto the mini-canvas by temporarily pointing the global ctx at it.

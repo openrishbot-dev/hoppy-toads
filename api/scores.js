@@ -61,17 +61,29 @@ function getRedis() {
   return redis;
 }
 
-function utcDayKey() {
-  const d = new Date();
+function dkOf(ms) {
+  const d = new Date(ms);
   return d.getUTCFullYear() + '-' + (d.getUTCMonth() + 1) + '-' + d.getUTCDate();
+}
+function utcDayKey() { return dkOf(Date.now()); }
+
+// The daily board buckets by the player's LOCAL day-key (sent by the client). To prevent
+// posting to arbitrary days, only accept a key within ±1 day of the server's UTC date — that
+// window covers every real timezone. Anything else falls back to the server's own UTC day.
+function resolveDailyKey(day) {
+  if (typeof day === 'string' && /^\d{4}-\d{1,2}-\d{1,2}$/.test(day)) {
+    const now = Date.now();
+    if (day === dkOf(now) || day === dkOf(now - 86400000) || day === dkOf(now + 86400000)) return day;
+  }
+  return utcDayKey();
 }
 
 function normMode(m) {
   return m === 'daily' ? 'daily' : 'all';
 }
 
-function boardKey(mode) {
-  return mode === 'daily' ? 'lb:daily:' + utcDayKey() : 'lb:all';
+function boardKey(mode, day) {
+  return mode === 'daily' ? 'lb:daily:' + resolveDailyKey(day) : 'lb:all';
 }
 
 // Match the client's sanitization: lowercase, strip to [a-z0-9], 1..14 chars.
@@ -125,7 +137,9 @@ export default async function handler(req, res) {
         return res.end(JSON.stringify({ name: nm ? String(nm) : null }));
       }
       const mode = normMode(req.query?.mode || (req.url.includes('mode=daily') ? 'daily' : 'all'));
-      const key = boardKey(mode);
+      let qDay = req.query?.day;
+      if (!qDay && req.url.includes('day=')) { try { qDay = new URL(req.url, 'http://x').searchParams.get('day'); } catch { qDay = undefined; } }
+      const key = boardKey(mode, qDay);
       // Highest scores first, with scores. Upstash returns [member, score, member, score, ...].
       const flat = await db.zrange(key, 0, TOP_N - 1, { rev: true, withScores: true });
       const rows = [];
@@ -204,7 +218,7 @@ export default async function handler(req, res) {
         }
       }
 
-      const key = boardKey(mode);
+      const key = boardKey(mode, body.day);
       // GT keeps only the player's best; one member per name -> best-per-name board.
       await db.zadd(key, { gt: true }, { score, member: name });
       if (mode === 'daily') await db.expire(key, DAILY_TTL);
