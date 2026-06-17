@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex">
+<title>Tobyworld Analytics</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box;}
+  body{background:#001a4d;color:#eef4ff;font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+    min-height:100vh;padding:18px;background:radial-gradient(120% 80% at 50% 0%,#103a8f 0%,#021a47 60%,#001028 100%);}
+  .wrap{max-width:860px;margin:0 auto;}
+  h1{font-size:20px;color:#7fb0ff;letter-spacing:.04em;margin-bottom:2px;}
+  .muted{color:#9fb6e6;font-size:12px;margin-bottom:16px;}
+  .controls{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:18px;align-items:center;}
+  .seg{display:flex;gap:4px;background:rgba(0,18,46,.5);border:1px solid #1f64ff;border-radius:10px;padding:3px;}
+  .seg button{background:transparent;border:none;color:#9fb6e6;padding:6px 12px;border-radius:7px;cursor:pointer;font:inherit;font-size:12px;}
+  .seg button.on{background:#0052FF;color:#fff;}
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin-bottom:20px;}
+  .kpi{background:#04173f;border:1px solid #1f64ff;border-radius:12px;padding:12px 14px;}
+  .kpi .v{font-size:24px;font-weight:bold;color:#ffd84a;}
+  .kpi .l{font-size:11px;color:#9fb6e6;margin-top:2px;text-transform:uppercase;letter-spacing:.06em;}
+  .panel{background:#04173f;border:1px solid #1f64ff;border-radius:12px;padding:14px 16px;margin-bottom:18px;}
+  .panel h2{font-size:13px;color:#7fb0ff;margin-bottom:14px;letter-spacing:.04em;text-transform:uppercase;}
+  .bars{display:flex;align-items:flex-end;gap:6px;height:150px;}
+  .bar{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;min-width:0;}
+  .bar .stack{width:100%;display:flex;flex-direction:column-reverse;align-items:center;height:120px;justify-content:flex-start;}
+  .bar .seg2{width:70%;border-radius:3px 3px 0 0;}
+  .bar .lbl{font-size:9px;color:#7f9ad0;white-space:nowrap;transform:rotate(-35deg);transform-origin:center;height:14px;}
+  .legend{display:flex;gap:14px;font-size:11px;color:#9fb6e6;margin-top:10px;}
+  .legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:middle;}
+  .hbars .row{display:flex;align-items:center;gap:8px;margin:6px 0;font-size:12px;}
+  .hbars .name{width:64px;color:#bcd4ff;}
+  .hbars .track{flex:1;background:rgba(31,100,255,.15);border-radius:5px;height:16px;overflow:hidden;}
+  .hbars .fill{height:100%;background:linear-gradient(90deg,#2f7bff,#7fb0ff);border-radius:5px;}
+  .hbars .n{width:46px;text-align:right;color:#ffd84a;}
+  table{width:100%;border-collapse:collapse;font-size:12px;}
+  th,td{text-align:right;padding:6px 8px;border-bottom:1px solid rgba(31,100,255,.18);}
+  th:first-child,td:first-child{text-align:left;color:#bcd4ff;}
+  th{color:#7fb0ff;font-weight:normal;}
+  .note{font-size:11px;color:#6f86b8;margin-top:6px;}
+  #err{color:#ff8a6a;font-size:13px;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>🐸 Tobyworld Analytics</h1>
+  <div class="muted" id="sub">loading…</div>
+  <div class="controls">
+    <div class="seg" id="siteSeg"></div>
+    <div class="seg" id="daysSeg"></div>
+  </div>
+  <div id="err"></div>
+  <div class="kpis" id="kpis"></div>
+  <div class="panel">
+    <h2>Daily traffic</h2>
+    <div class="bars" id="trafficBars"></div>
+    <div class="legend"><span><i style="background:#2f7bff"></i>Opens</span><span><i style="background:#ffd84a"></i>Unique devices</span></div>
+  </div>
+  <div class="panel" id="bucketPanel">
+    <h2>Score distribution (drop-off)</h2>
+    <div class="hbars" id="buckets"></div>
+    <div class="note">How far players get before crashing — a steep drop = a difficulty wall.</div>
+  </div>
+  <div class="panel">
+    <h2>By day</h2>
+    <div style="overflow:auto"><table id="tbl"></table></div>
+  </div>
+  <div class="note">Privacy-friendly: anonymous device counts only, no PII. UTC days.</div>
+</div>
+<script>
+const SITES=[{k:'all',n:'All sites'},{k:'hoppy',n:'Hoppy Toads'},{k:'toadvault',n:'ToadVault'},{k:'pixelpond',n:'Pixel Pond'}];
+const GAME_SITES=['hoppy'];
+let site='all', days=7, DATA=null;
+
+function seg(el, items, cur, on){ el.innerHTML='';
+  items.forEach(it=>{ const b=document.createElement('button'); b.textContent=it.n; b.className=(it.k==cur?'on':'');
+    b.onclick=()=>on(it.k); el.appendChild(b); }); }
+function fmt(n){ return (n||0).toLocaleString(); }
+
+// Aggregate the per-site payload for the selected site (or sum across all sites).
+function viewFor(site){
+  const out=DATA.days.map(d=>{
+    const sites = site==='all' ? DATA.sites : [site];
+    let opens=0,dau=0,starts=0,ends=0,sum=0; const buckets={};
+    sites.forEach(s=>{ const b=d.bySite[s]; if(!b) return;
+      opens+=b.opens; dau+=b.dau; starts+=b.starts; ends+=b.ends; sum+=(b.avgScore*b.ends);
+      Object.entries(b.buckets||{}).forEach(([k,v])=>{ buckets[k]=(buckets[k]||0)+Number(v); }); });
+    return { day:d.day, opens, dau, starts, ends, avg: ends?Math.round(sum/ends):0,
+             completion: starts?Math.round(ends/starts*100):0, buckets };
+  }).reverse(); // oldest -> newest for the chart
+  return out;
+}
+function isGame(site){ return site==='all' || GAME_SITES.includes(site); }
+
+function render(){
+  if(!DATA){ return; }
+  const rows=viewFor(site);
+  const tot=rows.reduce((a,r)=>({opens:a.opens+r.opens,dau:a.dau+r.dau,starts:a.starts+r.starts,ends:a.ends+r.ends}),{opens:0,dau:0,starts:0,ends:0});
+  const game=isGame(site);
+  // KPIs
+  const kpis=[ ['Opens',fmt(tot.opens)], ['Unique devices',fmt(tot.dau)+(site==='all'?'*':'')] ];
+  if(game){ kpis.push(['Runs',fmt(tot.starts)]);
+    const totSumEnds=rows.reduce((a,r)=>({s:a.s+r.avg*r.ends,e:a.e+r.ends}),{s:0,e:0});
+    kpis.push(['Avg score', totSumEnds.e?Math.round(totSumEnds.s/totSumEnds.e):0]); }
+  document.getElementById('kpis').innerHTML=kpis.map(k=>`<div class="kpi"><div class="v">${k[1]}</div><div class="l">${k[0]}</div></div>`).join('');
+  // traffic bars
+  const maxv=Math.max(1,...rows.map(r=>Math.max(r.opens,r.dau)));
+  document.getElementById('trafficBars').innerHTML=rows.map(r=>{
+    const ho=Math.round(r.opens/maxv*120), hd=Math.round(r.dau/maxv*120);
+    const md=r.day.split('-').slice(1).join('/');
+    return `<div class="bar" title="${r.day}\nopens ${r.opens} · unique ${r.dau}">
+      <div class="stack" style="flex-direction:row;align-items:flex-end;gap:2px;height:120px">
+        <div class="seg2" style="height:${ho}px;width:48%;background:#2f7bff"></div>
+        <div class="seg2" style="height:${hd}px;width:48%;background:#ffd84a"></div>
+      </div><div class="lbl">${md}</div></div>`;
+  }).join('');
+  // buckets (game only)
+  const bp=document.getElementById('bucketPanel');
+  if(game){ bp.style.display='';
+    const order=['0','1-4','5-9','10-24','25-49','50-99','100+'];
+    const agg={}; rows.forEach(r=>Object.entries(r.buckets).forEach(([k,v])=>agg[k]=(agg[k]||0)+v));
+    const maxb=Math.max(1,...order.map(o=>agg[o]||0));
+    document.getElementById('buckets').innerHTML=order.map(o=>{
+      const v=agg[o]||0; return `<div class="row"><div class="name">${o}</div><div class="track"><div class="fill" style="width:${Math.round((v/maxb)*100)}%"></div></div><div class="n">${fmt(v)}</div></div>`;
+    }).join('');
+  } else { bp.style.display='none'; }
+  // table
+  const cols = game ? ['Day','Opens','Unique','Runs','Ends','Avg','Compl%'] : ['Day','Opens','Unique'];
+  const trows=[...rows].reverse().map(r=>{
+    const cells = game ? [r.day,r.opens,r.dau,r.starts,r.ends,r.avg,r.completion+'%'] : [r.day,r.opens,r.dau];
+    return '<tr>'+cells.map(c=>`<td>${c}</td>`).join('')+'</tr>';
+  }).join('');
+  document.getElementById('tbl').innerHTML='<tr>'+cols.map(c=>`<th>${c}</th>`).join('')+'</tr>'+trows;
+  document.getElementById('sub').textContent = (SITES.find(s=>s.k==site).n)+' · last '+days+' days'+(site==='all'?'  (* unique is summed per-site, may overcount cross-site users)':'');
+}
+
+async function load(){
+  document.getElementById('err').textContent='';
+  try{
+    const r=await fetch('/api/stats?days='+days,{cache:'no-store'});
+    DATA=await r.json();
+    if(!DATA.days){ throw new Error(DATA.error||'no data'); }
+    render();
+  }catch(e){ document.getElementById('err').textContent='Could not load stats: '+e.message; }
+}
+function buildSegs(){
+  seg(document.getElementById('siteSeg'), SITES, site, k=>{ site=k; buildSegs(); render(); });
+  seg(document.getElementById('daysSeg'), [{k:7,n:'7d'},{k:14,n:'14d'},{k:30,n:'30d'}], days, k=>{ days=k; buildSegs(); load(); });
+}
+buildSegs(); load();
+</script>
+</body>
+</html>

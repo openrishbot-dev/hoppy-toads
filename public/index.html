@@ -868,9 +868,10 @@ const CID=(()=>{ try{ let c=localStorage.getItem('hoppytoads.cid');
   if(!c){ c=Math.random().toString(36).slice(2)+Date.now().toString(36); localStorage.setItem('hoppytoads.cid',c); }
   return c; }catch(e){ return 'anon'; } })();
 function track(ev, extra){
-  try{ const body=JSON.stringify(Object.assign({ev, cid:CID}, extra||{}));
-    if(navigator.sendBeacon){ navigator.sendBeacon('/api/stats', new Blob([body],{type:'application/json'})); }
-    else { fetch('/api/stats',{method:'POST',headers:{'Content-Type':'application/json'},body,keepalive:true}).catch(()=>{}); }
+  try{ const body=JSON.stringify(Object.assign({ev, cid:CID, site:'hoppy'}, extra||{}));
+    // text/plain = CORS-safelisted (no preflight), so the same beacon works cross-origin too
+    if(navigator.sendBeacon){ navigator.sendBeacon('/api/stats', new Blob([body],{type:'text/plain'})); }
+    else { fetch('/api/stats',{method:'POST',headers:{'Content-Type':'text/plain'},body,keepalive:true}).catch(()=>{}); }
   }catch(e){}
 }
 
