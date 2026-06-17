@@ -15,7 +15,7 @@
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="Hoppy Toads — Tobyworld on Base">
 <meta name="twitter:description" content="A Flappy-style arcade game themed around Tobyworld on Base.">
-<meta name="twitter:image" content="https://hoppy-toads.vercel.app/hero.png">
+<meta name="twitter:image" content="https://hoppy-toads.vercel.app/card.png">
 <!-- Farcaster Mini App embed (preferred). The `https://hoppy-toads.vercel.app` token is rewritten by
      `npm run set-domain -- https://your-domain` after deploy. -->
 <meta name="fc:miniapp" content='{"version":"1","imageUrl":"https://hoppy-toads.vercel.app/hero.png","button":{"title":"Launch Hoppy Toads","action":{"type":"launch_miniapp","name":"Hoppy Toads","url":"https://hoppy-toads.vercel.app/","splashImageUrl":"https://hoppy-toads.vercel.app/splash.png","splashBackgroundColor":"#001a4d"}}}'>
@@ -724,20 +724,22 @@ document.getElementById('shareScore').onclick=async()=>{
   const url='https://hoppy-toads.vercel.app';
   const tag=dailyMode?' (daily)':'';
   const text='I scored '+score+' on Hoppy Toads 🐸 — Tobyworld on Base'+tag+'. patience, toby.';
-  // Inside a Farcaster/Base host: open the native cast composer with the link embedded
-  // so the mini-app card renders. (composeCast embeds the URL -> rich preview.)
-  if(miniSdk && miniSdk.actions && miniSdk.actions.composeCast){
+  // 1) Only inside a REAL Farcaster/Base host (verified user): open the cast composer with the
+  //    link embedded so the mini-app card renders.
+  if(Identity.verified && miniSdk && miniSdk.actions && miniSdk.actions.composeCast){
     try{ await miniSdk.actions.composeCast({ text, embeds:[url] }); return; }catch(e){ /* fall through */ }
   }
-  // Native share sheet — pass url separately so X/Farcaster compose with a real link (card unfurls).
-  try{
-    if(navigator.share){ await navigator.share({title:'Hoppy Toads', text, url}); return; }
-  }catch(e){ /* user cancelled or unsupported */ }
+  // 2) Native share sheet (mobile / supported browsers) — lets the user pick X, Farcaster, etc.
+  if(navigator.share){
+    try{ await navigator.share({title:'Hoppy Toads', text, url}); return; }
+    catch(e){ if(e && e.name==='AbortError') return; /* unsupported -> fall through to copy */ }
+  }
+  // 3) Fallback: copy link to clipboard so it can be pasted anywhere (the card unfurls on paste).
   try{
     await navigator.clipboard.writeText(text+' '+url);
-    const old=btn.textContent; btn.textContent='Copied!'; setTimeout(()=>btn.textContent=old,1400);
+    const old=btn.textContent; btn.textContent='Link copied!'; setTimeout(()=>btn.textContent=old,1600);
   }catch(e){
-    const old=btn.textContent; btn.textContent='Copy failed'; setTimeout(()=>btn.textContent=old,1400);
+    const old=btn.textContent; btn.textContent='Copy failed'; setTimeout(()=>btn.textContent=old,1600);
   }
 };
 document.getElementById('playAgain').onclick=()=>{ ovEnd.classList.remove('show'); reset(); };
@@ -815,7 +817,6 @@ async function initMiniApp(){
     const mod=await import('https://esm.sh/@farcaster/miniapp-sdk');
     const sdk=mod.sdk||(mod.default&&mod.default.sdk)||mod.default;
     if(!sdk||!sdk.actions) return;
-    miniSdk=sdk;                                   // expose for composeCast sharing
     try{ await sdk.actions.ready(); }catch(e){}   // dismiss the host splash screen
     let ctx=null;
     try{ ctx=await Promise.race([sdk.context, new Promise(r=>setTimeout(()=>r(null),3000))]); }catch(e){}
@@ -823,6 +824,7 @@ async function initMiniApp(){
     if(!user) return;                              // launched outside a real host
     Identity.identity='fc:'+user.fid;
     Identity.verified=true;
+    miniSdk=sdk;                                   // only a REAL host (verified user) -> enable composeCast
     try{
       const provider=sdk.wallet&&sdk.wallet.getEthereumProvider&&await sdk.wallet.getEthereumProvider();
       if(provider){ const accts=await provider.request({method:'eth_accounts'});
