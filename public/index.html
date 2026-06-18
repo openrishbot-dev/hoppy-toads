@@ -991,8 +991,10 @@ const Music=(function(){
         nextBtn=document.getElementById('nextBtn'),
         np=document.getElementById('nowPlaying');
   let tracks=[], order=[], idx=0, started=false, loading=null, playing=false;
-  // remembered preference: did the user leave the music on or off last time?
-  let enabled=(localStorage.getItem('hoppytoads.music')||'on')!=='off';
+  // Music auto-plays every session (on the first tap, per autoplay policy). Pause is
+  // session-only — we intentionally do NOT persist "off", so a reload always brings music
+  // back (a persisted pause used to silently stop autoplay on open).
+  let enabled=true;
   function setIcon(){ if(playBtn) playBtn.textContent=playing?'⏸':'▶'; }
   function shuffle(a){ for(let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } return a; }
   function load(){
@@ -1019,15 +1021,15 @@ const Music=(function(){
   el.addEventListener('ended',()=>{ idx++; playCurrent(); });
   let errs=0;
   el.addEventListener('error',()=>{ errs++; if(errs<tracks.length){ idx++; setTimeout(playCurrent,300); } });
-  // first user gesture: auto-start unless the user had turned music off last session
+  // first user gesture: auto-start the music (enabled defaults on each session)
   async function start(){ if(started||!enabled) return; started=true; await load(); playCurrent(); }
   async function togglePlay(){
     if(playing){ el.pause(); playing=false; enabled=false; np.classList.remove('show'); }
     else { enabled=true; if(!tracks.length){ await load(); } started=true;
       if(el.src){ el.play().then(()=>{ playing=true; setIcon(); }).catch(()=>{}); } else { playCurrent(); } }
-    localStorage.setItem('hoppytoads.music',enabled?'on':'off'); setIcon();
+    setIcon();
   }
-  async function step(d){ enabled=true; localStorage.setItem('hoppytoads.music','on'); started=true;
+  async function step(d){ enabled=true; started=true;
     if(!tracks.length){ await load(); } idx+=d; playCurrent(); }
   if(playBtn) playBtn.addEventListener('click',e=>{ e.stopPropagation(); togglePlay(); });
   if(prevBtn) prevBtn.addEventListener('click',e=>{ e.stopPropagation(); step(-1); });
