@@ -28,7 +28,11 @@ const RATE_WINDOW = 60; // seconds
 // secret is available — we reuse the Upstash REST token as the HMAC key so no extra config is
 // needed — and degrades gracefully: if no secret is set, scoring works exactly as before.
 const TOKEN_TTL = 2 * 60 * 60;     // seconds a run token / nonce stays valid
-const MIN_MS_PER_POINT = 80;       // a score of N must take at least N*80ms of real time
+// Minimum real time per point. Kept low because score is heavily multiplied (combos,
+// Golden Streak 2x, Golden Hour 2x, near-miss bonuses, Relic Rush) — points accrue far
+// faster than 1/pipe, so a high per-point floor falsely rejects legit high scores. At 12ms
+// a 100k cheat still needs ~20min; real runs never approach this rate.
+const MIN_MS_PER_POINT = 12;
 function getSecret() {
   return process.env.HOPPY_SECRET || process.env.UPSTASH_REDIS_REST_TOKEN || process.env.KV_REST_API_TOKEN || '';
 }
